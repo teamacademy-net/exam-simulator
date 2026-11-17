@@ -4,6 +4,6 @@
 // security rules created by supabase/setup.sql.
 // NEVER put the "secret" or "service_role" key in this file.
 window.SUPABASE_CONFIG = {
-  url: 'PASTE_YOUR_PROJECT_URL_HERE',              // looks like https://abcdefghijkl.supabase.co
-  publishableKey: 'PASTE_YOUR_PUBLISHABLE_KEY_HERE' // starts with sb_publishable_ (or a long "anon" key starting eyJ)
+  url: 'https://idrlioiiiogptcihichv.supabase.co/rest/v1/',              // looks like https://abcdefghijkl.supabase.co
+  publishableKey: 'sb_publishable_LC9rRqW5DnQLX2_zEQhL2Q_psnv--lG' // starts with sb_publishable_ (or a long "anon" key starting eyJ)
 };
