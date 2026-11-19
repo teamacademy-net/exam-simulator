@@ -1,0 +1,111 @@
+{
+  "id": "powerbi-dax-basics",
+  "title": "Power BI – DAX Basics Quiz",
+  "category": "Power BI",
+  "level": "Beginner",
+  "provider": "Team Academy",
+  "description": "Short quiz on core DAX ideas. Shown on the exam card.",
+  "durationMinutes": 20,
+  "passingScore": 70,
+  "shuffleQuestions": true,
+  "shuffleOptions": true,
+  "domains": {
+    "dax": "DAX",
+    "model": "Data modelling"
+  },
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "domain": "dax",
+      "text": "Which DAX function changes the filter context of a calculation?",
+      "options": [
+        "SUM",
+        "CALCULATE",
+        "RELATED",
+        "FORMAT"
+      ],
+      "answer": "b",
+      "explanation": "CALCULATE evaluates an expression in a modified filter context."
+    },
+    {
+      "id": "q2",
+      "type": "multiple",
+      "domain": "model",
+      "text": "Which TWO steps reduce the size of an imported model? (Select two.)",
+      "options": [
+        "Remove columns no report uses",
+        "Turn on Auto date/time for every table",
+        "Split date-time columns into date and time",
+        "Add a calculated column for each measure"
+      ],
+      "answer": [
+        "a",
+        "c"
+      ],
+      "explanation": "Fewer columns and lower cardinality mean better compression."
+    },
+    {
+      "id": "q3",
+      "type": "truefalse",
+      "domain": "model",
+      "text": "A calculated column is recalculated every time a user changes a slicer.",
+      "answer": false,
+      "explanation": "Calculated columns are computed at refresh time, not when filters change."
+    },
+    {
+      "id": "q4",
+      "type": "match",
+      "domain": "dax",
+      "text": "Match each DAX function to what it does.",
+      "pairs": [
+        [
+          "CALCULATE",
+          "Evaluates an expression in a modified filter context"
+        ],
+        [
+          "FILTER",
+          "Returns a table with only the rows that meet a condition"
+        ],
+        [
+          "ALL",
+          "Returns all rows of a table, ignoring filters"
+        ]
+      ],
+      "distractors": [
+        "Converts text to a number"
+      ],
+      "explanation": "Each value may be used once, more than once, or not at all."
+    },
+    {
+      "id": "q5",
+      "type": "match",
+      "domain": "model",
+      "fixedOrder": true,
+      "text": "For each statement, select Yes if it is true. Otherwise, select No.",
+      "pairs": [
+        [
+          "A star schema keeps facts and dimensions in separate tables.",
+          "Yes"
+        ],
+        [
+          "A slicer change re-runs calculated columns.",
+          "No"
+        ]
+      ]
+    },
+    {
+      "id": "q6",
+      "type": "order",
+      "domain": "model",
+      "text": "Put the steps to build and share a report in the correct order.",
+      "steps": [
+        "Connect to the data source",
+        "Clean and shape the data in Power Query",
+        "Create relationships and measures",
+        "Build the visuals",
+        "Publish to a workspace"
+      ]
+    }
+  ]
+}

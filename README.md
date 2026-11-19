@@ -44,6 +44,30 @@ Note: login protects accounts and results, but the question files in `/exams` (w
 can still be opened directly by anyone who knows the address. Moving questions and scoring into
 Supabase is the next step on the roadmap.
 
+## Question banks (JSON) and question types
+
+Admins upload question banks on **Admin → Exams → Upload JSON** (run `supabase/setup-exams.sql` once first).
+New uploads start **Hidden**; try them, then click **Publish**. Students see exams grouped in tabs by `category`
+(Power BI, SQL, Python, ...), with a search box.
+
+| Type | Key fields | Example |
+|---|---|---|
+| `single` | `options`, `answer: "b"` | One correct option |
+| `multiple` | `options`, `answer: ["a","c"]` | "Select two" |
+| `truefalse` | `answer: true` | True / False |
+| `match` | `pairs: [["item","answer"], ...]`, optional `distractors` | Match functions to descriptions; Yes/No statements |
+| `order` | `steps: ["first", "second", ...]` (in the correct order) | Put steps in sequence |
+
+Exam fields: `id` (no spaces), `title`, `category`, `level`, `description`, `durationMinutes`, `passingScore`,
+`practiceOnly`, `domains`, `questions`.
+
+**Practice-only exams** (`"practiceOnly": true`): no mode choice, no time limit or clock, no pass mark or pass/fail.
+Students click **Submit answer** to see Correct/Incorrect, the correct answer and the justification (`explanation`);
+the question is then locked. Only submitted answers count. The result shows correct, incorrect and unanswered counts,
+total time and average time per question; the answer review lists every question with no filters or flags.
+Admins see total time and average per question for every attempt on **Admin → Results**. See `samples/powerbi-sample.json` (12 questions, every type) and `samples/template-all-types.json`.
+Scoring is all-or-nothing per question. Set `showSampleExams: false` in `js/config.js` to hide the two sample exams.
+
 ## Run it locally
 
 Double-click `index.html`, or serve the folder:

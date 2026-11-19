@@ -32,6 +32,8 @@
     const m = Math.round(sec / 60);
     return m >= 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
   }
+  // PRACTICE-ONLY: average seconds per question for a result
+  const avgOf = (r) => (r.total ? Math.round((r.timeUsed || 0) / r.total) : 0);
   function shuffle(arr) {
     const a = arr.slice();
     for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
@@ -40,6 +42,24 @@
   const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
   const titleCase = (s) => String(s).replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
   const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+  const sameSeq = (a, b) => a.length === b.length && a.every((x, k) => x === b[k]);
+  const hasResponse = (r) => Array.isArray(r) && r.some((x) => x);
+  // Is a question fully answered / answered correctly? Works for every question type.
+  function isComplete(q, r) {
+    r = r || [];
+    if (q.type === 'match') return r.length === q.items.length && r.every(Boolean);
+    if (q.type === 'order') return r.length === q.items.length;
+    return r.length >= q.answer.length;
+  }
+  function isCorrect(q, r) {
+    r = r || [];
+    return q.type === 'match' || q.type === 'order' ? sameSeq(r, q.answer) : sameSet(r, q.answer);
+  }
+  function scrambled(ids) {
+    let out = shuffle(ids);
+    for (let n = 0; n < 10 && ids.length > 1 && sameSeq(out, ids); n++) out = shuffle(ids);
+    return out;
+  }
 
   function toast(msg) {
     const t = document.createElement('div');
@@ -72,60 +92,21 @@
   }
 
   // ---------------------------------------------------------------- exam bank
-  function normalizeExam(def) {
-    if (!def || typeof def !== 'object') throw new Error('The file does not contain an exam object.');
-    if (!def.id || !def.title) throw new Error('The exam needs an "id" and a "title".');
-    if (!Array.isArray(def.questions) || !def.questions.length) throw new Error('The exam needs a non-empty "questions" array.');
-    const seen = new Set();
-    const questions = def.questions.map((q, i) => {
-      const n = i + 1;
-      if (!q || !q.text) throw new Error(`Question ${n}: missing "text".`);
-      if (!Array.isArray(q.options) || q.options.length < 2) throw new Error(`Question ${n}: needs at least 2 "options".`);
-      const options = q.options.map((o, j) => (typeof o === 'string'
-        ? { id: String.fromCharCode(97 + j), text: o }
-        : { id: String(o.id != null ? o.id : String.fromCharCode(97 + j)), text: String(o.text) }));
-      const ids = options.map((o) => o.id);
-      const answer = (Array.isArray(q.answer) ? q.answer : [q.answer]).filter((a) => a != null).map(String);
-      if (!answer.length || answer.some((a) => !ids.includes(a))) {
-        throw new Error(`Question ${n}: "answer" must list option ids (${ids.join(', ')}).`);
-      }
-      const id = String(q.id != null ? q.id : n);
-      if (seen.has(id)) throw new Error(`Question ${n}: duplicate id "${id}".`);
-      seen.add(id);
-      return {
-        id, domain: q.domain || 'general', text: String(q.text), options, answer,
-        type: answer.length > 1 ? 'multiple' : 'single',
-        explanation: q.explanation || '', fixedOrder: !!q.fixedOrder
-      };
-    });
-    return {
-      id: String(def.id),
-      title: String(def.title),
-      provider: def.provider || '',
-      description: def.description || '',
-      durationMinutes: Number(def.durationMinutes) || Math.max(1, Math.round(questions.length * 1.3)),
-      passingScore: Number(def.passingScore) || 65,
-      shuffleQuestions: def.shuffleQuestions !== false,
-      shuffleOptions: def.shuffleOptions !== false,
-      breaks: Array.isArray(def.breaks)
-        ? def.breaks.filter((b) => b && Number(b.afterQuestion) > 0).map((b) => ({ afterQuestion: Number(b.afterQuestion), minutes: Number(b.minutes) || 10 }))
-        : [],
-      domains: def.domains || {},
-      instructions: Array.isArray(def.instructions) ? def.instructions : [],
-      questions
-    };
-  }
+  // The file format and its checks live in js/exam-format.js (shared with the admin page).
+  const normalizeExam = (def) => window.ExamFormat.normalize(def);
 
   let exams = [];
+  let onlineRows = [];     // exams uploaded on the Admin page (Supabase "exams" table)
   function loadExams() {
     exams = [];
-    const add = (def, source) => {
+    const add = (def, source, row) => {
       try {
-        const ex = normalizeExam(def); ex.source = source;
+        const ex = normalizeExam(def); ex.source = source; ex.published = row ? !!row.published : true;
         exams = exams.filter((e) => e.id !== ex.id); exams.push(ex);
       } catch (err) { console.error(`Exam "${def && def.id}" skipped:`, err.message); }
     };
-    (window.EXAM_BANK || []).forEach((d) => add(d, 'built-in'));
+    if (CFG.showSampleExams !== false) (window.EXAM_BANK || []).forEach((d) => add(d, 'built-in'));
+    onlineRows.forEach((r) => add(r.definition, 'online', r));
     store.get(KEYS.custom, []).forEach((d) => add(d, 'custom'));
   }
   const getExam = (id) => exams.find((e) => e.id === id);
@@ -168,30 +149,15 @@
     const resume = savedExam ? `
       <section class="card card--notice">
         <div><h2 class="card__title">Exam in progress</h2>
-        <p>${h(savedExam.examTitle)} · ${Object.keys(savedExam.answers).length} of ${savedExam.questions.length} answered ·
-        ${savedExam.timeLimit ? fmtTime(savedExam.timeLimit - savedExam.elapsed) + ' remaining' : fmtTime(savedExam.elapsed) + ' elapsed'}</p></div>
+        <p>${h(savedExam.examTitle)} · ${savedExam.practiceOnly ? `${Object.keys(savedExam.checked || {}).length} of ${savedExam.questions.length} submitted`
+          : `${Object.keys(savedExam.answers).length} of ${savedExam.questions.length} answered ·
+        ${savedExam.timeLimit ? fmtTime(savedExam.timeLimit - savedExam.elapsed) + ' remaining' : fmtTime(savedExam.elapsed) + ' elapsed'}`}</p></div>
         <div class="card__actions"><button class="btn btn--secondary" data-action="discard">Discard</button>
         <button class="btn btn--primary" data-action="resume">Resume exam</button></div>
       </section>` : '';
 
-    const cards = exams.map((e) => {
-      const doms = [...new Set(e.questions.map((q) => q.domain))].map((d) => domainName(e.domains, d));
-      return `<article class="exam-card">
-        <div class="exam-card__top"><span class="pill">${e.source === 'custom' ? 'Imported' : h(e.provider || 'Built-in')}</span></div>
-        <h3>${h(e.title)}</h3>
-        <p class="muted">${h(e.description)}</p>
-        <dl class="facts">
-          <div><dt>Questions</dt><dd>${e.questions.length}</dd></div>
-          <div><dt>Time</dt><dd>${fmtDuration(e.durationMinutes * 60)}</dd></div>
-          <div><dt>Pass mark</dt><dd>${e.passingScore}%</dd></div>
-        </dl>
-        <p class="domains">${doms.map((d) => `<span class="chip">${h(d)}</span>`).join('')}</p>
-        <div class="exam-card__actions">
-          ${e.source === 'custom' ? `<button class="btn btn--ghost" data-action="remove-custom" data-id="${h(e.id)}">Remove</button>` : ''}
-          <button class="btn btn--primary" data-action="open-exam" data-id="${h(e.id)}">Start</button>
-        </div>
-      </article>`;
-    }).join('') || '<p class="muted">No exams loaded. Import a JSON question bank below.</p>';
+    const cats = categoryCounts();
+    const cat = cats.some((c) => c.name === prefs.cat) ? prefs.cat : 'all';
 
     const hist = history.length ? `
       <div class="table-wrap"><table class="table">
@@ -200,7 +166,7 @@
           <td>${h(new Date(r.date).toLocaleString())}</td><td>${h(r.examTitle)}</td>
           <td>${r.mode === 'practice' ? 'Practice' : 'Simulation'}</td>
           <td class="num">${r.percent}%</td>
-          <td><span class="result-tag ${r.passed ? 'is-pass' : 'is-fail'}">${r.passed ? 'Pass' : 'Fail'}</span></td>
+          <td>${r.practiceOnly ? '<span class="muted">–</span>' : `<span class="result-tag ${r.passed ? 'is-pass' : 'is-fail'}">${r.passed ? 'Pass' : 'Fail'}</span>`}</td>
           <td class="num"><button class="btn btn--small btn--secondary" data-action="view-result" data-id="${h(r.id)}">Report</button></td>
         </tr>`).join('')}</tbody></table></div>
       <button class="btn btn--ghost" data-action="clear-history">Clear history</button>`
@@ -214,23 +180,91 @@
           scheduled breaks and a domain-level score report.</p>
         </section>
         ${resume}
-        <section><h2 class="section-title">Available exams</h2><div class="exam-grid">${cards}</div></section>
-        <section class="card">
-          <h2 class="card__title">Add your own question bank</h2>
-          <p class="muted">Import an exam file (.json) written in the ExamSim format. Imported exams are stored only in this browser.
-          To publish an exam for all students, add it to the <code>exams</code> folder of the site instead.</p>
+        <section class="catalog">
+          <div class="catalog__head">
+            <h2 class="section-title">Available exams</h2>
+            <input type="search" id="exam-search" class="catalog__search" placeholder="Search exams" aria-label="Search exams" value="${h(catalogSearch)}">
+          </div>
+          ${cats.length > 1 ? `<div class="cat-tabs" role="tablist" aria-label="Exam categories">
+            <button type="button" role="tab" class="${cat === 'all' ? 'is-on' : ''}" aria-selected="${cat === 'all'}" data-action="cat" data-cat="all">All <span>${visibleExams().length}</span></button>
+            ${cats.map((c) => `<button type="button" role="tab" class="${cat === c.name ? 'is-on' : ''}" aria-selected="${cat === c.name}" data-action="cat" data-cat="${h(c.name)}">${h(c.name)} <span>${c.count}</span></button>`).join('')}
+          </div>` : ''}
+          <div id="catalog"></div>
+        </section>
+        ${!AUTH || AUTH.isStaff() ? `<section class="card">
+          <h2 class="card__title">Preview a question bank</h2>
+          <p class="muted">Try an exam file (.json) in this browser only, to check it before you publish it.
+          To publish an exam to students, upload it on the <a href="admin.html">Admin page</a>, Exams tab.</p>
           <div class="card__actions card__actions--start">
-            <label class="btn btn--primary file-btn">Import JSON<input type="file" accept=".json,application/json" id="import-file" hidden></label>
+            <label class="btn btn--primary file-btn">Preview JSON<input type="file" accept=".json,application/json" id="import-file" hidden></label>
             <button class="btn btn--secondary" data-action="template">Download template</button>
           </div>
-        </section>
+        </section>` : ''}
         <section><h2 class="section-title">Your attempts</h2>${hist}</section>
       </main>
       <footer class="sitefoot">${h(APP_NAME)} is an independent practice tool and is not affiliated with or endorsed by any certification body or test-delivery provider.</footer>`;
 
     const fi = document.getElementById('import-file');
     if (fi) fi.addEventListener('change', importFile);
+    const search = document.getElementById('exam-search');
+    search.addEventListener('input', () => { catalogSearch = search.value; renderCatalog(cat); });
+    renderCatalog(cat);
     document.title = `${APP_NAME} – Exam Simulator`;
+  }
+
+  // ---------------------------------------------------------------- exam catalogue (tabs per product)
+  let catalogSearch = '';
+  const visibleExams = () => exams.filter((e) => e.source !== 'online' || e.published || (AUTH && AUTH.isStaff()));
+  function categoryCounts() {
+    const c = {};
+    visibleExams().forEach((e) => { c[e.category] = (c[e.category] || 0) + 1; });
+    return Object.keys(c).sort((a, b) => (a === 'Other') - (b === 'Other') || a.localeCompare(b)).map((name) => ({ name, count: c[name] }));
+  }
+  function examCard(e, best) {
+    const doms = [...new Set(e.questions.map((q) => q.domain))].map((d) => domainName(e.domains, d));
+    const pill = e.source === 'custom' ? 'Preview (this browser)' : e.source === 'online' && !e.published ? 'Not published' : (e.provider || 'Built-in');
+    return `<article class="exam-card">
+      <div class="exam-card__top"><span class="pill ${e.source === 'online' && !e.published ? 'pill--warn' : ''}">${h(pill)}</span>${e.level ? `<span class="pill pill--level">${h(e.level)}</span>` : ''}</div>
+      <h3>${h(e.title)}</h3>
+      <p class="muted">${h(e.description)}</p>
+      <dl class="facts">
+        <div><dt>Questions</dt><dd>${e.questions.length}</dd></div>
+        ${e.practiceOnly ? `<div><dt>Time</dt><dd>No limit</dd></div>
+        <div><dt>Pass mark</dt><dd>None</dd></div>` : `<div><dt>Time</dt><dd>${fmtDuration(e.durationMinutes * 60)}</dd></div>
+        <div><dt>Pass mark</dt><dd>${e.passingScore}%</dd></div>`}
+      </dl>
+      <p class="domains">${doms.map((d) => `<span class="chip">${h(d)}</span>`).join('')}</p>
+      <p class="exam-card__types">${h(window.ExamFormat.typeSummary(e))}</p>
+      ${best ? `<p class="exam-card__best">Your best: <strong>${best.percent}%</strong> · ${best.n} attempt${best.n === 1 ? '' : 's'}</p>` : ''}
+      <div class="exam-card__actions">
+        ${e.source === 'custom' ? `<button class="btn btn--ghost" data-action="remove-custom" data-id="${h(e.id)}">Remove</button>` : ''}
+        <button class="btn btn--primary" data-action="open-exam" data-id="${h(e.id)}">Start</button>
+      </div>
+    </article>`;
+  }
+  function renderCatalog(cat) {
+    const box = document.getElementById('catalog');
+    if (!box) return;
+    const bests = {};
+    store.get(KEYS.history, []).forEach((r) => {
+      const b = bests[r.examId] || (bests[r.examId] = { percent: 0, n: 0 });
+      b.n++; b.percent = Math.max(b.percent, r.percent);
+    });
+    const q = catalogSearch.trim().toLowerCase();
+    const list = visibleExams()
+      .filter((e) => cat === 'all' || e.category === cat)
+      .filter((e) => !q || `${e.title} ${e.description} ${e.category} ${e.level}`.toLowerCase().includes(q))
+      .sort((a, b) => a.title.localeCompare(b.title));
+    if (!list.length) {
+      box.innerHTML = `<p class="muted">${exams.length ? 'No exams match your search.' : 'No exams have been published yet.'}</p>`;
+      return;
+    }
+    const grid = (arr) => `<div class="exam-grid">${arr.map((e) => examCard(e, bests[e.id])).join('')}</div>`;
+    if (cat !== 'all' || q) { box.innerHTML = grid(list); return; }
+    const groups = categoryCounts().map((c) => ({ name: c.name, items: list.filter((e) => e.category === c.name) })).filter((g) => g.items.length);
+    box.innerHTML = groups.length > 1
+      ? groups.map((g) => `<h3 class="cat-title">${h(g.name)} <span>${g.items.length} exam${g.items.length === 1 ? '' : 's'}</span></h3>${grid(g.items)}`).join('')
+      : grid(list);
   }
 
   function importFile(e) {
@@ -245,7 +279,7 @@
         custom.push(def);
         if (!store.set(KEYS.custom, custom)) throw new Error('Browser storage is full or unavailable.');
         loadExams(); renderHome();
-        toast(`Imported "${ex.title}" (${ex.questions.length} questions).`);
+        toast(`Loaded "${ex.title}" (${ex.questions.length} questions) for preview in this browser only.`);
       } catch (err) {
         showModal({ title: 'Could not import exam', body: `<p>${h(err.message)}</p>` });
       }
@@ -254,22 +288,7 @@
   }
 
   function downloadTemplate() {
-    const tpl = {
-      id: 'my-exam', title: 'My Practice Exam', provider: 'My Academy',
-      description: 'Short description shown on the exam card.',
-      durationMinutes: 30, passingScore: 70, shuffleQuestions: true, shuffleOptions: true,
-      breaks: [{ afterQuestion: 10, minutes: 5 }],
-      domains: { d1: 'Domain One', d2: 'Domain Two' },
-      instructions: ['Each question has one best answer unless it says "Select two".'],
-      questions: [
-        { id: 'q1', domain: 'd1', text: 'Single-answer question text?', options: [
-          { id: 'a', text: 'Option A' }, { id: 'b', text: 'Option B' }, { id: 'c', text: 'Option C' }, { id: 'd', text: 'Option D' }],
-          answer: ['b'], explanation: 'Why B is correct.' },
-        { id: 'q2', domain: 'd2', text: 'Multiple-response question text? (Select two.)', options: [
-          { id: 'a', text: 'Option A' }, { id: 'b', text: 'Option B' }, { id: 'c', text: 'Option C' }, { id: 'd', text: 'Option D' }],
-          answer: ['a', 'c'], explanation: 'Why A and C are correct.' }
-      ]
-    };
+    const tpl = window.ExamFormat.template();
     const blob = new Blob([JSON.stringify(tpl, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = 'examsim-template.json';
@@ -289,7 +308,7 @@
       });
     }
     const signedInName = AUTH && AUTH.user ? AUTH.displayName() : '';  // SUPABASE
-    intro = { examId: id, step: 0, mode: 'exam', count: 'all', candidate: signedInName || store.get(KEYS.prefs, {}).candidate || '', agreed: false };
+    intro = { examId: id, step: 0, mode: ex.practiceOnly ? 'practice' : 'exam', count: 'all', candidate: signedInName || store.get(KEYS.prefs, {}).candidate || '', agreed: false };
     renderIntro();
   }
 
@@ -309,8 +328,26 @@
     const steps = ['Welcome', 'Agreement', 'Tutorial'];
     const stepper = `<ol class="stepper">${steps.map((s, i) => `<li class="${i === intro.step ? 'is-current' : i < intro.step ? 'is-done' : ''}"><span>${i + 1}</span>${s}</li>`).join('')}</ol>`;
     const counts = [10, 25, 50, 100, 150].filter((n) => n < ex.questions.length);
+    const po = !!ex.practiceOnly;
     let body = '';
-    if (intro.step === 0) {
+    if (intro.step === 0 && po) {
+      body = `<h1>${h(ex.title)}</h1>
+        <p class="muted">${h(ex.description)}</p>
+        <dl class="facts facts--wide">
+          <div><dt>Questions</dt><dd>${ex.questions.length}</dd></div>
+          <div><dt>Time limit</dt><dd>None</dd></div>
+          <div><dt>Pass mark</dt><dd>None (practice)</dd></div>
+        </dl>
+        <div class="form-grid">
+          <label class="field"><span>Candidate name (optional)</span><input id="cand-name" type="text" maxlength="60" value="${h(intro.candidate)}" autocomplete="name"></label>
+          <label class="field"><span>Number of questions</span><select id="q-count">
+            <option value="all">All ${ex.questions.length} questions</option>
+            ${counts.map((n) => `<option value="${n}" ${String(n) === intro.count ? 'selected' : ''}>${n} random questions</option>`).join('')}
+          </select></label>
+        </div>
+        <p class="muted">Practice examination. Submit each answer to see straight away whether it is correct, with the justification.
+        There is no time limit; your total time is recorded and shown with your results.</p>`;
+    } else if (intro.step === 0) {
       body = `<h1>${h(ex.title)}</h1>
         <p class="muted">${h(ex.description)}</p>
         <dl class="facts facts--wide">
@@ -341,14 +378,17 @@
       body = `<h1>How the exam works</h1>
         <div class="tutorial">
           <div><h3>Answering</h3><p>Click an option to select it. Questions that say <em>Select two</em> need exactly that many answers.</p></div>
+          <div><h3>Match questions</h3><p>Pick an answer from the drop-down next to each item. An answer can be used more than once.</p></div>
+          <div><h3>Order questions</h3><p>Use ▲ and ▼ to move the steps until they are in the right order, first at the top.</p></div>
           <div><h3>Strikethrough</h3><p>Right-click an option (or use its <em>Strike</em> button) to cross out answers you have ruled out.</p></div>
-          <div><h3>Flag for review</h3><p>Flag any question you want to come back to. Flags are shown on the review screen.</p></div>
+          ${po ? `<div><h3>Submit answer</h3><p>Select your answer, then click <strong>Submit answer</strong>. After you submit, the question is locked and the correct answer and justification are shown.</p></div>`
+            : `<div><h3>Flag for review</h3><p>Flag any question you want to come back to. Flags are shown on the review screen.</p></div>`}
           <div><h3>Review screen</h3><p>See every question in the section as Complete, Incomplete or Unseen, and jump straight to any of them.</p></div>
-          <div><h3>Sections &amp; breaks</h3><p>Ending a section locks its answers. The exam clock pauses during a break.</p></div>
-          <div><h3>Shortcuts</h3><p><kbd>Alt</kbd>+<kbd>N</kbd> next · <kbd>Alt</kbd>+<kbd>P</kbd> previous · <kbd>Alt</kbd>+<kbd>F</kbd> flag · <kbd>Alt</kbd>+<kbd>R</kbd> review</p></div>
+          ${po ? '' : '<div><h3>Sections &amp; breaks</h3><p>Ending a section locks its answers. The exam clock pauses during a break.</p></div>'}
+          <div><h3>Shortcuts</h3><p><kbd>Alt</kbd>+<kbd>N</kbd> next · <kbd>Alt</kbd>+<kbd>P</kbd> previous${po ? '' : ' · <kbd>Alt</kbd>+<kbd>F</kbd> flag'} · <kbd>Alt</kbd>+<kbd>R</kbd> review</p></div>
         </div>
         ${ex.instructions.length ? `<h3>Exam instructions</h3><ul>${ex.instructions.map((t) => `<li>${h(t)}</li>`).join('')}</ul>` : ''}
-        <p class="muted">${intro.mode === 'exam' ? 'The timer starts when you select <strong>Begin exam</strong>.' : 'Practice mode is untimed.'}</p>`;
+        <p class="muted">${po ? 'There is no time limit. Your total time is recorded and shown with your results.' : intro.mode === 'exam' ? 'The timer starts when you select <strong>Begin exam</strong>.' : 'Practice mode is untimed.'}</p>`;
     }
     const isLast = intro.step === steps.length - 1;
     $app.innerHTML = `${topbar()}
@@ -369,11 +409,15 @@
   function buildSession(ex) {
     let qs = ex.shuffleQuestions ? shuffle(ex.questions) : ex.questions.slice();
     const n = intro.count === 'all' ? qs.length : Math.min(qs.length, Number(intro.count));
-    qs = qs.slice(0, n).map((q) => ({
-      id: q.id, domain: q.domain, text: q.text, type: q.type, answer: q.answer, explanation: q.explanation,
-      options: ex.shuffleOptions && !q.fixedOrder ? shuffle(q.options) : q.options
-    }));
-    const isExam = intro.mode === 'exam';
+    qs = qs.slice(0, n).map((q) => {
+      const base = { id: q.id, domain: q.domain, text: q.text, type: q.type, subtype: q.subtype || '', answer: q.answer, explanation: q.explanation };
+      if (q.type === 'match') {
+        return Object.assign(base, { items: q.items, targets: ex.shuffleOptions && !q.fixedOrder ? shuffle(q.targets) : q.targets, options: [] });
+      }
+      if (q.type === 'order') return Object.assign(base, { items: q.items, startOrder: scrambled(q.items.map((x) => x.id)), options: [] });
+      return Object.assign(base, { options: ex.shuffleOptions && !q.fixedOrder ? shuffle(q.options) : q.options });
+    });
+    const isExam = intro.mode === 'exam' && !ex.practiceOnly;
     const ratio = n / ex.questions.length;
     // Breaks are scaled proportionally when a shorter exam is chosen.
     const breakPoints = isExam
@@ -387,7 +431,7 @@
     sections.push({ start, end: n - 1 });
 
     return {
-      examId: ex.id, examTitle: ex.title, mode: intro.mode, candidate: intro.candidate,
+      examId: ex.id, examTitle: ex.title, mode: isExam ? 'exam' : 'practice', practiceOnly: !!ex.practiceOnly, candidate: intro.candidate,
       passingScore: ex.passingScore, domains: ex.domains,
       questions: qs, answers: {}, flagged: [], struck: {}, checked: {}, seen: [],
       current: 0, view: 'question', reviewList: null, reviewLabel: '',
@@ -424,10 +468,10 @@
   const curSection = () => state.sections[state.sectionIndex];
   const isLastSection = () => state.sectionIndex >= state.sections.length - 1;
   function statusOf(i) {
-    const sel = state.answers[i] || [];
-    const need = state.questions[i].answer.length;
-    if (sel.length >= need) return 'complete';
-    if (sel.length > 0 || state.seen.includes(i)) return 'incomplete';
+    const r = state.answers[i];
+    if (state.practiceOnly) return state.checked[i] ? 'complete' : hasResponse(r) || state.seen.includes(i) ? 'incomplete' : 'unseen';
+    if (isComplete(state.questions[i], r)) return 'complete';
+    if (hasResponse(r) || state.seen.includes(i)) return 'incomplete';
     return 'unseen';
   }
   function timerText() {
@@ -444,22 +488,14 @@
       <div class="exam-top__meta">
         ${s.sections.length > 1 ? `<span>Section ${s.sectionIndex + 1} of ${s.sections.length}</span>` : ''}
         ${showQ ? `<span>Question ${s.current + 1} of ${s.questions.length}</span>` : ''}
-        <span class="timer ${isLow() ? 'is-low' : ''}" id="timer">${timerText()}</span>
+        ${s.practiceOnly ? '' : `<span class="timer ${isLow() ? 'is-low' : ''}" id="timer">${timerText()}</span>`}
       </div></header>`;
   }
 
   // ---------------------------------------------------------------- question view
-  function renderQuestion() {
-    const s = state, i = s.current, q = s.questions[i];
-    if (!s.seen.includes(i)) s.seen.push(i);
-    const sel = s.answers[i] || [], struck = s.struck[i] || [], flagged = s.flagged.includes(i);
-    const checked = s.mode === 'practice' && s.checked[i];
-    const sec = curSection();
-    const pos = s.reviewList ? s.reviewList.indexOf(i) : -1;
-    const atFirst = s.reviewList ? pos <= 0 : i <= sec.start;
-    const atLast = s.reviewList ? pos === s.reviewList.length - 1 || pos < 0 : i >= sec.end;
+  // Multiple choice / multiple response / true-false
+  function choiceBody(q, sel, struck, checked) {
     const multi = q.type === 'multiple';
-
     const opts = q.options.map((o, k) => {
       const on = sel.includes(o.id), x = struck.includes(o.id);
       let cls = 'option' + (multi ? ' option--multi' : '') + (on ? ' is-selected' : '') + (x ? ' is-struck' : '');
@@ -471,24 +507,92 @@
         ${checked ? '' : `<button type="button" class="option__strike" data-action="strike" data-opt="${h(o.id)}" aria-label="${x ? 'Remove strikethrough from' : 'Strike out'} option ${letter(k)}">${x ? 'Undo' : 'Strike'}</button>`}
       </div>`;
     }).join('');
+    return `<p class="question__instr">${multi ? `Select ${q.answer.length}.` : 'Select one.'}</p>
+      <div class="options" role="${multi ? 'group' : 'radiogroup'}" aria-label="Answer options">${opts}</div>`;
+  }
+
+  // Match: each item gets an answer from a drop-down (also used for Yes/No statements)
+  function matchBody(q, resp, checked) {
+    const tText = (id) => (q.targets.find((t) => t.id === id) || {}).text || '';
+    const rows = q.items.map((it, k) => {
+      const val = resp[k] || '';
+      const ok = checked && val === q.answer[k];
+      const mark = checked ? `<span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span>` : '';
+      return `<div class="match-row ${checked ? (ok ? 'is-correct' : 'is-wrong') : ''}">
+        <div class="match-row__item">${rich(it.text)}</div>
+        <div class="match-row__pick">
+          <select data-match-row="${k}" aria-label="Answer for: ${h(it.text)}" ${checked ? 'disabled' : ''}>
+            <option value="">Select…</option>
+            ${q.targets.map((t) => `<option value="${h(t.id)}" ${t.id === val ? 'selected' : ''}>${h(t.text)}</option>`).join('')}
+          </select>${mark}
+          ${checked && !ok ? `<div class="match-row__right">Correct: ${h(tText(q.answer[k]))}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    return `<p class="question__instr">Choose an answer for each row. Each answer may be used once, more than once, or not at all.</p>
+      <div class="match">${rows}</div>`;
+  }
+
+  // Order: move steps up and down until they are in the right sequence
+  function orderBody(q, resp, checked) {
+    const order = resp.length ? resp : q.startOrder;
+    const text = (id) => (q.items.find((x) => x.id === id) || {}).text || '';
+    const rows = order.map((id, k) => {
+      const ok = checked && id === q.answer[k];
+      return `<li class="order-row ${checked ? (ok ? 'is-correct' : 'is-wrong') : ''}">
+        <span class="order-row__num">${k + 1}</span>
+        <span class="order-row__text">${rich(text(id))}</span>
+        ${checked ? `<span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span>` : `<span class="order-row__btns">
+          <button type="button" class="order-btn" data-action="order-up" data-step="${h(id)}" ${k === 0 ? 'disabled' : ''} aria-label="Move up: ${h(text(id))}">▲</button>
+          <button type="button" class="order-btn" data-action="order-down" data-step="${h(id)}" ${k === order.length - 1 ? 'disabled' : ''} aria-label="Move down: ${h(text(id))}">▼</button></span>`}
+      </li>`;
+    }).join('');
+    const confirm = !checked && !resp.length
+      ? '<p class="order-hint">Use ▲ and ▼ to move the steps. If this order is already your answer, <button type="button" class="link-btn" data-action="order-confirm">use this order</button>.</p>' : '';
+    return `<p class="question__instr">Put the steps in the correct order, first step at the top.</p>
+      <ol class="order">${rows}</ol>${confirm}`;
+  }
+
+  function practiceFeedback(q, resp) {
+    const ok = isCorrect(q, resp);
+    const po = state.practiceOnly;
+    const isChoice = q.type !== 'match' && q.type !== 'order';
+    const yours = po && !ok && isChoice
+      ? ` <span>· Your answer: ${h(q.options.map((o, k) => (resp.includes(o.id) ? letter(k) : null)).filter(Boolean).join(', ') || 'none')}</span>` : '';
+    let right = '';
+    if (q.type === 'match') right = 'see the corrections above';
+    else if (q.type === 'order') right = q.answer.map((id) => (q.items.find((x) => x.id === id) || {}).text).join(' → ');
+    else right = q.options.map((o, k) => (q.answer.includes(o.id) ? letter(k) : null)).filter(Boolean).join(', ');
+    return `<div class="feedback ${ok ? 'is-ok' : 'is-bad'}" role="status">
+      <p class="feedback__head">${ok ? 'Correct' : 'Incorrect'}${yours}${ok ? '' : ` <span>· Correct answer: ${h(right)}</span>`}</p>
+      ${q.explanation ? `<p>${po ? '<strong>Justification.</strong> ' : ''}${rich(q.explanation)}</p>` : ''}</div>`;
+  }
+
+  function renderQuestion() {
+    const s = state, i = s.current, q = s.questions[i];
+    if (!s.seen.includes(i)) s.seen.push(i);
+    const resp = s.answers[i] || [], struck = s.struck[i] || [], flagged = s.flagged.includes(i);
+    const checked = s.mode === 'practice' && s.checked[i];
+    const sec = curSection();
+    const pos = s.reviewList ? s.reviewList.indexOf(i) : -1;
+    const atFirst = s.reviewList ? pos <= 0 : i <= sec.start;
+    const atLast = s.reviewList ? pos === s.reviewList.length - 1 || pos < 0 : i >= sec.end;
+
+    const body = q.type === 'match' ? matchBody(q, resp, checked)
+      : q.type === 'order' ? orderBody(q, resp, checked)
+        : choiceBody(q, resp, struck, checked);
 
     let feedback = '';
     if (s.mode === 'practice') {
-      if (checked) {
-        const ok = sameSet(sel, q.answer);
-        const right = q.options.map((o, k) => (q.answer.includes(o.id) ? letter(k) : null)).filter(Boolean).join(', ');
-        feedback = `<div class="feedback ${ok ? 'is-ok' : 'is-bad'}" role="status">
-          <p class="feedback__head">${ok ? 'Correct' : 'Incorrect'} <span>· Correct answer: ${right}</span></p>
-          ${q.explanation ? `<p>${rich(q.explanation)}</p>` : ''}</div>`;
-      } else {
-        feedback = `<div class="practice-bar"><button class="btn btn--primary" data-action="check" ${sel.length ? '' : 'disabled'}>Check answer</button></div>`;
-      }
+      const canCheck = q.type === 'order' ? true : q.type === 'match' ? isComplete(q, resp) : resp.length > 0;
+      feedback = checked ? practiceFeedback(q, resp)
+        : `<div class="practice-bar"><button class="btn btn--primary" data-action="check" ${canCheck ? '' : 'disabled'}>${s.practiceOnly ? 'Submit answer' : 'Check answer'}</button></div>`;
     }
 
     $app.innerHTML = `<div class="exam-shell" style="--q-scale:${prefs.font}">
       ${examHeader(true)}
       <div class="exam-toolbar">
-        <button class="tool ${flagged ? 'is-on' : ''}" data-action="flag" aria-pressed="${flagged}"><span aria-hidden="true">⚑</span> ${flagged ? 'Flagged for review' : 'Flag for review'}</button>
+        ${s.practiceOnly ? '' : `<button class="tool ${flagged ? 'is-on' : ''}" data-action="flag" aria-pressed="${flagged}"><span aria-hidden="true">⚑</span> ${flagged ? 'Flagged for review' : 'Flag for review'}</button>`}
         <button class="tool" data-action="calc"><span aria-hidden="true">▦</span> Calculator</button>
         <span class="tool-group" role="group" aria-label="Text size">
           <button class="tool" data-action="font-dec" aria-label="Smaller text">A−</button>
@@ -500,8 +604,7 @@
         <div class="question">
           <p class="question__num">Question ${i + 1}${flagged ? ' <span class="flag-badge">⚑ Flagged</span>' : ''}</p>
           <div class="question__text">${rich(q.text)}</div>
-          <p class="question__instr">${multi ? `Select ${q.answer.length}.` : 'Select one.'}</p>
-          <div class="options" role="${multi ? 'group' : 'radiogroup'}" aria-label="Answer options">${opts}</div>
+          ${body}
           ${feedback}
         </div>
       </main>
@@ -510,11 +613,41 @@
         <div class="exam-bottom__nav">
           <button class="btn btn--bar" data-action="prev" ${atFirst ? 'disabled' : ''}>◀ Previous</button>
           <button class="btn btn--bar" data-action="review">Review screen</button>
-          <button class="btn btn--bar btn--bar-primary" data-action="next">${atLast ? 'Review ▶' : 'Next ▶'}</button>
+          <button class="btn btn--bar btn--bar-primary" data-action="next">${atLast ? 'Review ▶' : s.practiceOnly ? 'Next question ▶' : 'Next ▶'}</button>
         </div>
       </footer>
     </div>`;
     save();
+  }
+
+  function setMatch(row, value) {
+    const s = state, i = s.current, q = s.questions[i];
+    if (q.type !== 'match' || (s.mode === 'practice' && s.checked[i])) return;
+    const r = (s.answers[i] || q.items.map(() => '')).slice();
+    r[row] = value;
+    if (hasResponse(r)) s.answers[i] = r; else delete s.answers[i];
+    renderQuestion();
+    const el = $app.querySelector(`select[data-match-row="${row}"]`);
+    if (el) el.focus();
+  }
+
+  function moveStep(stepId, dir) {
+    const s = state, i = s.current, q = s.questions[i];
+    if (q.type !== 'order' || (s.mode === 'practice' && s.checked[i])) return;
+    const order = (s.answers[i] && s.answers[i].length ? s.answers[i] : q.startOrder).slice();
+    const k = order.indexOf(stepId), j = k + dir;
+    if (k < 0 || j < 0 || j >= order.length) return;
+    [order[k], order[j]] = [order[j], order[k]];
+    s.answers[i] = order;
+    renderQuestion();
+    const btn = $app.querySelector(`[data-action="${dir < 0 ? 'order-up' : 'order-down'}"][data-step="${CSS.escape(stepId)}"]`)
+      || $app.querySelector(`[data-step="${CSS.escape(stepId)}"]:not([disabled])`);
+    if (btn) btn.focus();
+  }
+
+  function confirmOrder() {
+    const s = state, i = s.current, q = s.questions[i];
+    if (q.type === 'order' && !(s.answers[i] && s.answers[i].length)) s.answers[i] = q.startOrder.slice();
   }
 
   function selectOption(optId) {
@@ -585,12 +718,12 @@
             <div><strong>${count('complete')}</strong><span>Complete</span></div>
             <div><strong>${count('incomplete')}</strong><span>Incomplete</span></div>
             <div><strong>${count('unseen')}</strong><span>Unseen</span></div>
-            <div><strong>${flagged}</strong><span>Flagged</span></div>
+            ${s.practiceOnly ? '' : `<div><strong>${flagged}</strong><span>Flagged</span></div>`}
           </div>
           <div class="review__filters">
             <button class="btn btn--secondary" data-action="review-filter" data-filter="all">Review all</button>
             <button class="btn btn--secondary" data-action="review-filter" data-filter="incomplete">Review incomplete</button>
-            <button class="btn btn--secondary" data-action="review-filter" data-filter="flagged">Review flagged</button>
+            ${s.practiceOnly ? '' : '<button class="btn btn--secondary" data-action="review-filter" data-filter="flagged">Review flagged</button>'}
           </div>
           <div class="tiles">${tiles}</div>
         </div>
@@ -618,6 +751,13 @@
     const inc = idx.filter((i) => statusOf(i) !== 'complete').length;
     const fl = idx.filter((i) => s.flagged.includes(i)).length;
     const last = isLastSection();
+    if (s.practiceOnly) {
+      return showModal({
+        title: 'Finish the practice exam?',
+        body: `<p><strong>${inc}</strong> question${inc === 1 ? ' has' : 's have'} not been submitted and will be counted as unanswered.</p>`,
+        actions: [{ label: 'Return to exam' }, { label: 'Finish', danger: true, onClick: () => finishExam() }]
+      });
+    }
     showModal({
       title: last ? 'End the exam?' : 'End this section?',
       body: `<p>This ${last && s.sections.length === 1 ? 'exam' : 'section'} has <strong>${inc}</strong> incomplete and <strong>${fl}</strong> flagged question${fl === 1 ? '' : 's'}.</p>
@@ -687,9 +827,11 @@
     stopTimer(); closeCalc();
     const s = state;
     const items = s.questions.map((q, i) => {
-      const response = s.answers[i] || [];
-      return { text: q.text, domain: q.domain, type: q.type, options: q.options, answer: q.answer, response,
-        correct: sameSet(response, q.answer), explanation: q.explanation, flagged: s.flagged.includes(i) };
+      // PRACTICE-ONLY: an answer counts only once it has been submitted.
+      const response = s.practiceOnly && !s.checked[i] ? [] : s.answers[i] || [];
+      return { text: q.text, domain: q.domain, type: q.type, subtype: q.subtype || '', options: q.options,
+        items: q.items || null, targets: q.targets || null, answer: q.answer, response,
+        correct: isCorrect(q, response), explanation: q.explanation, flagged: s.flagged.includes(i) };
     });
     const correct = items.filter((x) => x.correct).length;
     const percent = Math.round((correct / items.length) * 100);
@@ -698,8 +840,9 @@
     const domains = Object.values(byDomain).map((d) => Object.assign(d, { name: domainName(s.domains, d.key), percent: Math.round((d.correct / d.total) * 100) }));
     const result = {
       id: 'r' + Date.now(), examId: s.examId, examTitle: s.examTitle, mode: s.mode, candidate: s.candidate,
-      date: new Date().toISOString(), total: items.length, correct, percent, passingScore: s.passingScore,
-      passed: percent >= s.passingScore, timeUsed: s.elapsed, timeLimit: s.timeLimit,
+      date: new Date().toISOString(), total: items.length, correct, percent,
+      passingScore: s.practiceOnly ? null : s.passingScore, passed: s.practiceOnly ? null : percent >= s.passingScore,
+      practiceOnly: !!s.practiceOnly, timeUsed: s.elapsed, timeLimit: s.timeLimit,
       timeUp: !!(opts && opts.timeUp), domains, items
     };
     const hist = store.get(KEYS.history, []);
@@ -719,9 +862,43 @@
   }
 
   // ================================================================ RESULTS
-  function renderResults() {
+  // PRACTICE-ONLY results: counts and the two time figures, no pass mark
+  function renderPracticeResults() {
     const r = viewing.result;
-    const answered = r.items.filter((x) => x.response.length).length;
+    const unanswered = r.items.filter((x) => !hasResponse(x.response)).length;
+    $app.innerHTML = `${topbar()}
+      <main class="page">
+        <section class="score is-practice">
+          <div class="score__main">
+            <p class="score__label">Practice result</p>
+            <h1>Practice complete</h1>
+            <p>${h(r.examTitle)}${r.candidate ? ` · ${h(r.candidate)}` : ''} · ${h(new Date(r.date).toLocaleString())}</p>
+          </div>
+          <div class="score__num"><strong>${r.correct} / ${r.total}</strong><span>correct answers</span></div>
+        </section>
+        <section class="stats">
+          <div><strong>${r.correct}</strong><span>Correct</span></div>
+          <div><strong>${r.total - r.correct - unanswered}</strong><span>Incorrect</span></div>
+          <div><strong>${unanswered}</strong><span>Unanswered</span></div>
+          <div><strong>${fmtTime(r.timeUsed)}</strong><span>Total time</span></div>
+          <div><strong>${fmtTime(avgOf(r))}</strong><span>Average per question</span></div>
+        </section>
+        <div class="actions-row no-print">
+          <button class="btn btn--primary" data-action="show-answers">Review answers</button>
+          <button class="btn btn--secondary" data-action="retake" data-id="${h(r.examId)}">Retake exam</button>
+          <button class="btn btn--secondary" data-action="print">Print / save PDF</button>
+          <button class="btn btn--ghost" data-action="home">Home</button>
+        </div>
+        <div id="answers"></div>
+      </main>`;
+    window.scrollTo(0, 0);
+    document.title = `Practice result – ${APP_NAME}`;
+  }
+
+  function renderResults() {
+    if (viewing.result.practiceOnly) return renderPracticeResults();
+    const r = viewing.result;
+    const answered = r.items.filter((x) => hasResponse(x.response)).length;
     const rows = r.domains.map((d) => {
       const rt = rating(d.percent);
       return `<tr><th scope="row">${h(d.name)}</th><td class="num">${d.correct} / ${d.total}</td>
@@ -763,32 +940,56 @@
     document.title = `Score report – ${APP_NAME}`;
   }
 
+  function answerDetail(x) {
+    if (x.type === 'match') {
+      const t = (id) => ((x.targets || []).find((y) => y.id === id) || {}).text || '';
+      return `<div class="table-wrap"><table class="table table--answers">
+        <thead><tr><th>Item</th><th>Your answer</th><th>Correct answer</th></tr></thead>
+        <tbody>${x.items.map((it, k) => {
+          const ok = x.response[k] === x.answer[k];
+          return `<tr class="${ok ? 'is-correct' : 'is-wrong'}"><td>${rich(it.text)}</td>
+            <td>${x.response[k] ? h(t(x.response[k])) : '<span class="muted">No answer</span>'} <span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span></td>
+            <td>${h(t(x.answer[k]))}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+    }
+    if (x.type === 'order') {
+      const t = (id) => ((x.items || []).find((y) => y.id === id) || {}).text || '';
+      const yours = hasResponse(x.response)
+        ? `<ol>${x.response.map((id, k) => `<li class="${id === x.answer[k] ? 'is-correct' : 'is-wrong'}">${h(t(id))}</li>`).join('')}</ol>`
+        : '<p class="muted">No answer</p>';
+      return `<div class="order-compare">
+        <div><h4>Your order</h4>${yours}</div>
+        <div><h4>Correct order</h4><ol>${x.answer.map((id) => `<li>${h(t(id))}</li>`).join('')}</ol></div></div>`;
+    }
+    return `<ul class="answer__opts">${x.options.map((o, k) => {
+      const isAns = x.answer.includes(o.id), picked = x.response.includes(o.id);
+      return `<li class="${isAns ? 'is-correct' : picked ? 'is-wrong' : ''}"><span class="option__letter">${letter(k)}.</span>
+        <span>${rich(o.text)}</span>${isAns ? '<span class="tag tag--ok">Correct answer</span>' : ''}${picked ? '<span class="tag">Your answer</span>' : ''}</li>`;
+    }).join('')}</ul>`;
+  }
+
   function renderAnswers(filter) {
     const r = viewing.result;
     viewing.filter = filter;
     const pred = {
       all: () => true, incorrect: (x) => !x.correct, correct: (x) => x.correct,
-      flagged: (x) => x.flagged, unanswered: (x) => !x.response.length
+      flagged: (x) => x.flagged, unanswered: (x) => !hasResponse(x.response)
     }[filter] || (() => true);
     const list = r.items.map((x, i) => ({ x, i })).filter(({ x }) => pred(x));
-    const filters = ['all', 'incorrect', 'correct', 'flagged', 'unanswered'];
+    const filters = r.practiceOnly ? [] : ['all', 'incorrect', 'correct', 'flagged', 'unanswered'];
     const cards = list.map(({ x, i }) => `
       <article class="answer ${x.correct ? 'is-ok' : 'is-bad'}">
         <header class="answer__head"><span>Question ${i + 1} · ${h((r.domains.find((d) => d.key === x.domain) || { name: titleCase(x.domain) }).name)}</span>
-          <span class="result-tag ${x.correct ? 'is-pass' : 'is-fail'}">${x.correct ? 'Correct' : x.response.length ? 'Incorrect' : 'Unanswered'}</span>${x.flagged ? '<span class="flag-badge">⚑ Flagged</span>' : ''}</header>
+          <span class="result-tag ${x.correct ? 'is-pass' : 'is-fail'}">${x.correct ? 'Correct' : hasResponse(x.response) ? 'Incorrect' : 'Unanswered'}</span>${x.flagged && !r.practiceOnly ? '<span class="flag-badge">⚑ Flagged</span>' : ''}</header>
         <div class="question__text">${rich(x.text)}</div>
-        <ul class="answer__opts">${x.options.map((o, k) => {
-          const isAns = x.answer.includes(o.id), picked = x.response.includes(o.id);
-          return `<li class="${isAns ? 'is-correct' : picked ? 'is-wrong' : ''}"><span class="option__letter">${letter(k)}.</span>
-            <span>${rich(o.text)}</span>${isAns ? '<span class="tag tag--ok">Correct answer</span>' : ''}${picked ? '<span class="tag">Your answer</span>' : ''}</li>`;
-        }).join('')}</ul>
-        ${x.explanation ? `<div class="answer__exp"><strong>Explanation.</strong> ${rich(x.explanation)}</div>` : ''}
+        ${answerDetail(x)}
+        ${x.explanation ? `<div class="answer__exp"><strong>${r.practiceOnly ? 'Justification' : 'Explanation'}.</strong> ${rich(x.explanation)}</div>` : ''}
       </article>`).join('') || '<p class="muted">No questions match this filter.</p>';
     document.getElementById('answers').innerHTML = `
       <section class="answers">
         <h2 class="section-title">Answer review</h2>
-        <div class="segmented no-print" role="group" aria-label="Filter answers">${filters.map((f) =>
-          `<button class="${f === filter ? 'is-on' : ''}" data-action="answers-filter" data-filter="${f}" aria-pressed="${f === filter}">${titleCase(f)}</button>`).join('')}</div>
+        ${filters.length ? `<div class="segmented no-print" role="group" aria-label="Filter answers">${filters.map((f) =>
+          `<button class="${f === filter ? 'is-on' : ''}" data-action="answers-filter" data-filter="${f}" aria-pressed="${f === filter}">${titleCase(f)}</button>`).join('')}</div>` : ''}
         ${cards}
       </section>`;
   }
@@ -864,6 +1065,7 @@
       actions: [{ label: 'Cancel' }, { label: 'Discard', danger: true, onClick: () => { store.del(KEYS.session); renderHome(); } }]
     }),
     'open-exam': (el) => openExam(el.dataset.id),
+    cat: (el) => { prefs.cat = el.dataset.cat; store.set(KEYS.prefs, prefs); renderHome(); },
     'remove-custom': (el) => showModal({
       title: 'Remove imported exam?', body: '<p>This removes it from this browser. Your past results stay in your history.</p>',
       actions: [{ label: 'Cancel' }, { label: 'Remove', danger: true, onClick: () => {
@@ -893,7 +1095,10 @@
       state.flagged = state.flagged.includes(i) ? state.flagged.filter((x) => x !== i) : state.flagged.concat(i);
       renderQuestion();
     },
-    check: () => { state.checked[state.current] = true; renderQuestion(); },
+    check: () => { confirmOrder(); state.checked[state.current] = true; renderQuestion(); },
+    'order-up': (el) => moveStep(el.dataset.step, -1),
+    'order-down': (el) => moveStep(el.dataset.step, 1),
+    'order-confirm': () => { confirmOrder(); renderQuestion(); },
     prev: () => move(-1),
     next: () => move(1),
     review: () => { state.reviewList = null; state.view = 'review'; renderSession(); },
@@ -928,6 +1133,12 @@
     if (fn) { e.preventDefault(); fn(el, e); }
   });
 
+  // Match questions use drop-downs.
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest && e.target.closest('select[data-match-row]');
+    if (sel && state && state.view === 'question') setMatch(Number(sel.dataset.matchRow), sel.value);
+  });
+
   document.addEventListener('contextmenu', (e) => {
     const opt = e.target.closest('.option[data-opt]');
     if (opt && state && state.view === 'question') { e.preventDefault(); strikeOption(opt.dataset.opt); }
@@ -941,7 +1152,7 @@
     if (!state || state.view === 'break' || !e.altKey) return;
     const k = e.key.toLowerCase();
     const map = state.view === 'question'
-      ? { n: 'next', p: 'prev', f: 'flag', r: 'review' }
+      ? Object.assign({ n: 'next', p: 'prev', r: 'review' }, state.practiceOnly ? {} : { f: 'flag' })
       : { r: 'return-question' };
     if (map[k]) {
       e.preventDefault();
@@ -951,9 +1162,21 @@
   });
 
   // ---------------------------------------------------------------- boot
-  function boot() {
+  async function boot() {
     // SUPABASE: keep each user's in-progress exam and history separate on shared computers.
     if (AUTH && AUTH.user) ['session', 'history', 'custom'].forEach((k) => { KEYS[k] += '.' + AUTH.user.id; });
+    // SUPABASE: exams uploaded on the Admin page. Students only receive published ones.
+    if (AUTH && AUTH.client) {
+      $app.innerHTML = `${topbar()}<main class="page"><p class="muted">Loading exams…</p></main>`;
+      try {
+        const { data, error } = await AUTH.client.from('exams').select('id, published, definition').order('title');
+        if (error) throw error;
+        onlineRows = data || [];
+      } catch (err) {
+        console.warn('Could not load online exams:', (err && err.message) || err);
+        if (AUTH.isStaff()) setTimeout(() => toast('Online exams are not set up yet: run supabase/setup-exams.sql in Supabase.'), 300);
+      }
+    }
     loadExams();
     renderHome();
   }

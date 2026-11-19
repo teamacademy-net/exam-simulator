@@ -1,0 +1,161 @@
+{
+  "id": "powerbi-sample-quiz",
+  "title": "Power BI Sample Quiz (all question types)",
+  "category": "Power BI",
+  "level": "Intermediate",
+  "provider": "Team Academy",
+  "description": "Twelve original practice questions that show every question type: multiple choice, multiple response, true/false, match, yes/no and order.",
+  "durationMinutes": 20,
+  "passingScore": 70,
+  "shuffleQuestions": false,
+  "shuffleOptions": true,
+  "domains": {
+    "prepare": "Prepare the data",
+    "model": "Model the data",
+    "visualize": "Visualize and analyze",
+    "manage": "Manage and secure"
+  },
+  "instructions": [
+    "Multiple-choice questions have one best answer unless they say Select two.",
+    "Match questions: choose an answer from the drop-down next to each item.",
+    "Order questions: use the arrows to put the steps in order, first at the top."
+  ],
+  "questions": [
+    {
+      "id": "pbi01",
+      "type": "single",
+      "domain": "prepare",
+      "text": "In Power Query, which feature stacks the rows of two tables that have the same columns into one table?",
+      "options": ["Merge Queries", "Append Queries", "Group By", "Pivot Column"],
+      "answer": "b",
+      "explanation": "Append Queries adds the rows of one table under another. Merge Queries joins tables side by side on matching columns."
+    },
+    {
+      "id": "pbi02",
+      "type": "single",
+      "domain": "model",
+      "text": "Which storage mode leaves the data in the source system and sends a query to it each time a visual needs data?",
+      "options": ["Import", "DirectQuery", "Dual", "Composite"],
+      "answer": "b",
+      "explanation": "DirectQuery does not copy the data into the model; each visual queries the source when it is rendered."
+    },
+    {
+      "id": "pbi03",
+      "type": "multiple",
+      "domain": "model",
+      "text": "Which TWO actions reduce the size of a model that uses Import mode? (Select two.)",
+      "options": [
+        "Remove columns that no report or measure uses",
+        "Turn on Auto date/time for every table",
+        "Split a date-time column into separate date and time columns",
+        "Add a calculated column for every measure"
+      ],
+      "answer": ["a", "c"],
+      "explanation": "Fewer columns and lower cardinality compress better. Auto date/time adds hidden date tables, and extra calculated columns add storage."
+    },
+    {
+      "id": "pbi04",
+      "type": "single",
+      "domain": "model",
+      "text": "Which DAX function evaluates an expression in a modified filter context?",
+      "options": ["SUM", "CALCULATE", "RELATED", "FORMAT"],
+      "answer": "b",
+      "explanation": "CALCULATE is the main function for changing filter context, for example to ignore or add filters."
+    },
+    {
+      "id": "pbi05",
+      "type": "match",
+      "domain": "model",
+      "text": "Match each DAX function to what it does.",
+      "pairs": [
+        ["CALCULATE", "Evaluates an expression in a modified filter context"],
+        ["FILTER", "Returns a table with only the rows that meet a condition"],
+        ["ALL", "Returns all rows of a table, ignoring any filters"],
+        ["RELATED", "Returns a value from the related table on the one side of a relationship"]
+      ],
+      "distractors": ["Converts a text value to a number"],
+      "explanation": "One answer is not used: converting text to a number is done by VALUE."
+    },
+    {
+      "id": "pbi06",
+      "type": "order",
+      "domain": "visualize",
+      "text": "Put the steps to build and share a report in the correct order.",
+      "steps": [
+        "Connect to the data source",
+        "Clean and shape the data in Power Query",
+        "Create relationships and measures in the model",
+        "Build the visuals on the report canvas",
+        "Publish the report to a workspace in the Power BI service"
+      ],
+      "explanation": "Data is prepared before it is modelled, and the model must exist before visuals can use it."
+    },
+    {
+      "id": "pbi07",
+      "type": "match",
+      "domain": "model",
+      "fixedOrder": true,
+      "text": "For each statement, select Yes if the statement is true. Otherwise, select No.",
+      "pairs": [
+        ["A star schema keeps facts and dimensions in separate tables.", "Yes"],
+        ["Row-level security roles can be defined in Power BI Desktop.", "Yes"],
+        ["A calculated column is recalculated every time a user changes a slicer.", "No"]
+      ],
+      "explanation": "Calculated columns are computed when the data is refreshed, not when report filters change."
+    },
+    {
+      "id": "pbi08",
+      "type": "single",
+      "domain": "visualize",
+      "text": "Which visual is the best choice to show how a value changes over a continuous date range?",
+      "options": ["Line chart", "Pie chart", "Card", "Table"],
+      "answer": "a",
+      "explanation": "Line charts show trends over continuous time. Pie charts show parts of a whole at one point."
+    },
+    {
+      "id": "pbi09",
+      "type": "order",
+      "domain": "manage",
+      "text": "Put the steps to set up row-level security (RLS) in the correct order.",
+      "steps": [
+        "Create a role in Power BI Desktop",
+        "Add a DAX filter expression to the role",
+        "Test the role with View as",
+        "Publish the report to the Power BI service",
+        "Assign users or groups to the role in the Power BI service"
+      ],
+      "explanation": "Roles are defined and tested in Desktop; members are assigned after publishing."
+    },
+    {
+      "id": "pbi10",
+      "type": "single",
+      "domain": "model",
+      "text": "A Date table and a Sales table are related on the date column. What is the usual cardinality from Date to Sales?",
+      "options": ["One-to-one", "One-to-many", "Many-to-many", "No relationship is needed"],
+      "answer": "b",
+      "explanation": "Each date appears once in the Date table and many times in the Sales fact table."
+    },
+    {
+      "id": "pbi11",
+      "type": "truefalse",
+      "domain": "manage",
+      "text": "A Power BI dashboard can contain tiles pinned from more than one report.",
+      "answer": true,
+      "explanation": "Dashboards can combine tiles pinned from several reports."
+    },
+    {
+      "id": "pbi12",
+      "type": "multiple",
+      "domain": "manage",
+      "text": "An imported semantic model uses an on-premises SQL Server database. Which TWO are needed to refresh it automatically every day? (Select two.)",
+      "options": [
+        "An on-premises data gateway",
+        "A scheduled refresh in the semantic model settings",
+        "Power BI Desktop left open on a laptop",
+        "A pie chart on every report page"
+      ],
+      "answer": ["a", "b"],
+      "explanation": "The gateway gives the service access to the on-premises source, and the schedule sets when refresh runs."
+    }
+  ]
+}

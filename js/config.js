@@ -17,5 +17,9 @@ window.APP_CONFIG = {
     { min: 0,  label: 'Needs Improvement', cls: 'needs' }
   ],
   // How many past attempts to keep in this browser.
-  historyLimit: 25
+  historyLimit: 25,
+
+  // Show the two sample exams (PMP-style and Agile) from the /exams folder?
+  // Set to false once your own exams are uploaded on the Admin page.
+  showSampleExams: true
 };

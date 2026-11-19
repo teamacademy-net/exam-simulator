@@ -4,6 +4,7 @@ window.EXAM_BANK.push({
   id: 'agile-foundations-sample',
   title: 'Agile & Scrum Foundations Quiz',
   provider: 'Sample',
+  category: 'Agile',
   description: 'A short quiz on agile values, Scrum roles and events, and Kanban basics. Good for trying practice mode.',
   durationMinutes: 12,
   passingScore: 70,

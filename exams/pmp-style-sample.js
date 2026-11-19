@@ -5,6 +5,7 @@ window.EXAM_BANK.push({
   id: 'pm-situational-sample',
   title: 'Project Management Practice Exam (PMP-style)',
   provider: 'Sample',
+  category: 'Project Management',
   description: 'Situational questions across People, Process and Business Environment, with predictive, agile and hybrid scenarios.',
   durationMinutes: 40,
   passingScore: 65,
