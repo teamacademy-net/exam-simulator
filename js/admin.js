@@ -36,7 +36,7 @@
   }
 
   function header() {
-    return `<header class="appbar"><a class="appbar__brand" href="./"><span class="appbar__logo" aria-hidden="true">✓</span><span>${h(APP_NAME)}</span></a>
+    return `<header class="appbar"><a class="appbar__brand" href="./"><img class="appbar__logoimg" src="assets/team-academy-logo.png" alt="Team Academy"></a>
       <span class="appbar__tag">Admin</span>
       <span class="appbar__user"><span class="appbar__name">${h(AUTH.displayName())} · ${h(AUTH.profile.role)}</span>
       <a class="btn btn--small btn--secondary" href="./">Exams</a>
@@ -300,7 +300,7 @@
 
   AUTH.onSignedIn(async () => {
     if (!AUTH.isStaff()) {
-      $app.innerHTML = `<header class="appbar"><a class="appbar__brand" href="./"><span class="appbar__logo" aria-hidden="true">✓</span><span>${h(APP_NAME)}</span></a></header>
+      $app.innerHTML = `<header class="appbar"><a class="appbar__brand" href="./"><img class="appbar__logoimg" src="assets/team-academy-logo.png" alt="Team Academy"></a></header>
         <main class="page auth-page"><section class="card auth-card"><h1 class="card__title">Admins and trainers only</h1>
         <p class="muted">Your account is a student account. Ask an admin if you need access.</p>
         <div class="card__actions card__actions--start"><a class="btn btn--primary" href="./">Go to exams</a></div></section></main>`;

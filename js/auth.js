@@ -67,7 +67,7 @@
 
   // ------------------------------------------------------------ screens
   function shell(inner) {
-    $app.innerHTML = `<header class="appbar"><span class="appbar__brand"><span class="appbar__logo" aria-hidden="true">✓</span><span>${h(APP_NAME)}</span></span></header>
+    $app.innerHTML = `<header class="appbar"><span class="appbar__brand"><img class="appbar__logoimg" src="assets/team-academy-logo.png" alt="Team Academy"></span></header>
       <main class="page auth-page">${inner}</main>`;
   }
 

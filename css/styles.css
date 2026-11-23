@@ -383,3 +383,7 @@ a.appbar__brand { text-decoration: none; }
 /* Practice-only exams: neutral score card (no pass/fail) */
 .score.is-practice { border-left-color: var(--brand); }
 .table td.cell-wrap { white-space: normal; min-width: 200px; }
+
+/* Team Academy logo in the top bar (transparent background) */
+.appbar__logoimg { display: block; height: 30px; width: auto; }
+@media (max-width: 640px) { .appbar__logoimg { height: 22px; } }

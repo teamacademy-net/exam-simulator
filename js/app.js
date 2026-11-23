@@ -134,7 +134,7 @@
 
   function topbar(extra) {
     return `<header class="appbar"><button class="appbar__brand" data-action="home" aria-label="${h(APP_NAME)} home">
-      <span class="appbar__logo" aria-hidden="true">✓</span><span>${h(APP_NAME)}</span></button>
+      <img class="appbar__logoimg" src="assets/team-academy-logo.png" alt="Team Academy"></button>
       <span class="appbar__tag">${h(CFG.tagline || '')}</span>${extra || ''}${userMenu()}</header>`;
   }
 
