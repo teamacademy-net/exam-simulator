@@ -172,3 +172,18 @@ Branding (app name, agreement text, rating bands) lives in `js/config.js`.
 - Server-side question delivery and scoring so answers are not visible in the browser
 - Question types: drag-and-drop, hotspot, fill-in-the-blank
 - Larger banks with per-domain weighting (e.g. 180-question full-length simulations)
+
+## Courses: who sees which exams
+
+Run `supabase/setup-courses.sql` once in the Supabase SQL Editor (after `setup.sql` and `setup-exams.sql`).
+Then, on **Admin → Courses**:
+
+1. **New course**: a name (e.g. *PMP*), a short code (e.g. `pmp`), the access length (3 months by default) and the exams it unlocks.
+2. **Enrol students**: choose the course and paste emails (one per line). Students who have not registered yet
+   get access as soon as they register with that email. Enrolling someone again renews their access from today.
+3. **Enrolled students**: see who has access until when; **Renew** or **Remove** access.
+
+Rules: a student sees an exam only if it is published and either in **no course** (free for everyone) or in one of
+their **active** courses. Trainers and admins see every exam. Removing or ending access never deletes results.
+Built-in sample exams can be put in a course too (they are hidden from students who are not enrolled, but their
+files are public on GitHub, so use uploaded exams for real question banks).

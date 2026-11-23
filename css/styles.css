@@ -407,3 +407,19 @@ a.appbar__brand { text-decoration: none; }
 .modal:has(.zoom-img) { width: min(1100px, 96vw); }
 .zoom-img { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; background: #fff; border-radius: 6px; }
 @media print { .codeblock { white-space: pre-wrap; } .qimg__zoom { display: none; } }
+
+/* ---------- Admin: Courses tab ---------- */
+.admin-form { border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin: 0 0 18px; background: var(--surface-2); }
+.admin-form h3 { margin: 0 0 12px; font-size: 1.05rem; }
+.admin-form .card__actions { margin-top: 12px; }
+.admin-emails { margin-top: 14px; }
+.field textarea { font: inherit; font-weight: 400; padding: .55em .7em; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; min-height: 90px; }
+.admin-checks { border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px 12px; margin: 14px 0 0; max-height: 260px; overflow-y: auto; background: var(--surface); }
+.admin-checks legend { font-weight: 700; font-size: .9rem; padding: 0 6px; }
+.admin-checks .check { margin-top: 8px; font-weight: 500; align-items: flex-start; }
+.admin-subtitle { font-size: 1rem; margin: 20px 0 8px; }
+
+/* ---------- Student home: Your courses ---------- */
+.my-courses ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.my-courses li { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.my-courses .is-ended { color: var(--muted); }

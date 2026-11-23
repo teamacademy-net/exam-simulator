@@ -127,11 +127,18 @@
 
   let exams = [];
   let onlineRows = [];     // exams uploaded on the Admin page (Supabase "exams" table)
+  // COURSES: null = no course rules (staff, or setup-courses.sql not run). Otherwise:
+  //   { restricted: Set of exam ids that belong to a course, open: Set of exam ids of my active courses, mine: [my courses] }
+  let courseInfo = null;
+  const courseActive = (c) => Date.now() >= Date.parse(c.starts_at) && Date.now() < Date.parse(c.expires_at);
+  // A student may see an exam if it is in no course, or in one of their active courses.
+  const mayOpen = (id) => !courseInfo || !courseInfo.restricted.has(id) || courseInfo.open.has(id);
   function loadExams() {
     exams = [];
     const add = (def, source, row) => {
       try {
         const ex = normalizeExam(def); ex.source = source; ex.published = row ? !!row.published : true;
+        if (source !== 'custom' && !mayOpen(ex.id)) return;   // COURSES: not in this student's courses
         exams = exams.filter((e) => e.id !== ex.id); exams.push(ex);
       } catch (err) { console.error(`Exam "${def && def.id}" skipped:`, err.message); }
     };
@@ -169,6 +176,19 @@
   }
 
   // ================================================================ HOME
+  // COURSES: the student's courses and how long access lasts
+  function myCoursesBox() {
+    if (!courseInfo) return '';
+    const day = (d) => new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+    const items = courseInfo.mine.map((c) => (courseActive(c)
+      ? `<li><strong>${h(c.name)}</strong><span class="muted">Access until ${h(day(c.expires_at))}</span></li>`
+      : `<li class="is-ended"><strong>${h(c.name)}</strong><span>Access ended on ${h(day(c.expires_at))}</span></li>`)).join('');
+    return `<section class="card my-courses">
+      <h2 class="card__title">Your courses</h2>
+      ${items ? `<ul>${items}</ul>` : '<p class="muted">You are not enrolled in a course yet, so you can only see the free practice exams. Please contact Team Academy to get access to your course\'s mock exams.</p>'}
+    </section>`;
+  }
+
   function renderHome() {
     stopTimer(); state = null; intro = null; viewing = null;
     closeCalc();
@@ -210,6 +230,7 @@
           scheduled breaks and a domain-level score report.</p>
         </section>
         ${resume}
+        ${myCoursesBox()}
         <section class="catalog">
           <div class="catalog__head">
             <h2 class="section-title">Available exams</h2>
@@ -1214,6 +1235,25 @@
       } catch (err) {
         console.warn('Could not load online exams:', (err && err.message) || err);
         if (AUTH.isStaff()) setTimeout(() => toast('Online exams are not set up yet: run supabase/setup-exams.sql in Supabase.'), 300);
+      }
+      // COURSES: which exams belong to a course, and which courses this student is enrolled in.
+      if (!AUTH.isStaff()) {
+        try {
+          const [links, mine] = await Promise.all([
+            AUTH.client.from('course_exams').select('course_id, exam_id'),
+            AUTH.client.rpc('my_courses')
+          ]);
+          if (links.error || mine.error) throw (links.error || mine.error);
+          const list = mine.data || [];
+          courseInfo = {
+            restricted: new Set((links.data || []).map((l) => l.exam_id)),
+            open: new Set(list.filter(courseActive).flatMap((c) => c.exam_ids || [])),
+            mine: list
+          };
+        } catch (err) {
+          courseInfo = null;   // courses not set up yet: everyone sees every published exam, as before
+          console.warn('Courses not available:', (err && err.message) || err);
+        }
       }
     }
     loadExams();
