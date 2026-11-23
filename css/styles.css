@@ -387,3 +387,23 @@ a.appbar__brand { text-decoration: none; }
 /* Team Academy logo in the top bar (transparent background) */
 .appbar__logoimg { display: block; height: 30px; width: auto; }
 @media (max-width: 640px) { .appbar__logoimg { height: 22px; } }
+
+/* ---------- code blocks and images inside questions, options and justifications ---------- */
+.codeblock { position: relative; display: block; margin: 10px 0; padding: 12px 14px; background: var(--surface-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; font: .92em/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  white-space: pre; overflow-x: auto; tab-size: 4; text-align: left; }
+.codeblock code { font: inherit; white-space: inherit; }
+.codeblock__lang { position: absolute; top: 4px; right: 10px; font: 600 .68rem var(--font); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.codeblock:has(.codeblock__lang) { padding-top: 22px; }
+.icode { font: .92em ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; white-space: pre-wrap; }
+.option__text, .match-row__item, .order-row__text, .answer__opts li > span:not(.tag):not(.option__letter) { min-width: 0; }
+.qimg { display: block; margin: 10px 0; }
+.qimg img { display: block; max-width: 100%; max-height: 420px; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+.option .qimg { margin: 6px 0 2px; }
+.option .qimg img { max-height: 220px; }
+.qimg__zoom { margin-top: 4px; padding: 2px 8px; font: 600 .78rem var(--font); color: var(--brand); background: none; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+.qimg__zoom:hover { border-color: var(--brand); }
+.modal:has(.zoom-img) { width: min(1100px, 96vw); }
+.zoom-img { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto; background: #fff; border-radius: 6px; }
+@media print { .codeblock { white-space: pre-wrap; } .qimg__zoom { display: none; } }

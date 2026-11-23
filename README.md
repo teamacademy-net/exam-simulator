@@ -65,7 +65,22 @@ Exam fields: `id` (no spaces), `title`, `category`, `level`, `description`, `dur
 Students click **Submit answer** to see Correct/Incorrect, the correct answer and the justification (`explanation`);
 the question is then locked. Only submitted answers count. The result shows correct, incorrect and unanswered counts,
 total time and average time per question; the answer review lists every question with no filters or flags.
-Admins see total time and average per question for every attempt on **Admin → Results**. See `samples/powerbi-sample.json` (12 questions, every type) and `samples/template-all-types.json`.
+Admins see total time and average per question for every attempt on **Admin → Results**.
+
+**Code and images** (any question type; also in options, justifications, match pairs and order steps):
+
+| You want | Write in the JSON |
+|---|---|
+| A code block, spacing kept exactly (any language) | ```` ```python ```` on its own line, the code, then ```` ``` ```` on its own line (inside JSON text, line breaks are `\n`) |
+| Inline code | `` `x = 1` `` |
+| An image under the question | `"image": "images/powerbi/q12.png", "imageAlt": "Sales by region"` |
+| An image as an answer option | `{ "text": "Line chart", "image": "images/powerbi/line.png" }` (text is optional) |
+| An image in the justification | `"explanationImage": "images/powerbi/q12-answer.png"` |
+| An image anywhere in text | `![Short description](images/powerbi/q12.png)` |
+
+Images can be files in this site (upload an `images` folder to GitHub, e.g. `images/powerbi/q12.png`, no spaces in names)
+or web addresses starting with `https://`. Students can click **Enlarge image** to see an image full size.
+See `samples/code-and-images-demo.json` (images in `images/demo/`) for a working example. See `samples/powerbi-sample.json` (12 questions, every type) and `samples/template-all-types.json`.
 Scoring is all-or-nothing per question. Set `showSampleExams: false` in `js/config.js` to hide the two sample exams.
 
 ## Run it locally

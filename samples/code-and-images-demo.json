@@ -1,0 +1,158 @@
+{
+  "id": "demo-code-and-images",
+  "title": "Demo – Code and Image Questions",
+  "category": "Demo",
+  "level": "Demo",
+  "provider": "Team Academy",
+  "description": "Eight sample questions showing code blocks (Python, DAX, SQL) and image questions (Power BI). For checking the interface; hide or delete it afterwards.",
+  "practiceOnly": true,
+  "shuffleQuestions": false,
+  "shuffleOptions": false,
+  "domains": {
+    "python": "Python",
+    "dax": "DAX",
+    "powerbi": "Power BI visuals",
+    "sql": "SQL"
+  },
+  "questions": [
+    {
+      "id": "demo-1",
+      "type": "single",
+      "domain": "python",
+      "text": "What does this code print?\n\n```python\ndef total(prices):\n    result = 0\n    for p in prices:\n        if p > 10:\n            result += p\n    return result\n\nprint(total([5, 12, 20]))```",
+      "options": [
+        "37",
+        "32",
+        "12",
+        "0"
+      ],
+      "answer": "b",
+      "explanation": "Only 12 and 20 are greater than 10, so `result` becomes 12 + 20 = 32. The value 5 is skipped by the `if p > 10` test."
+    },
+    {
+      "id": "demo-2",
+      "type": "single",
+      "domain": "python",
+      "text": "Which snippet prints the numbers 1, 2 and 3, each on its own line?",
+      "options": [
+        "```python\nfor i in range(3):\n    print(i)```",
+        "```python\nfor i in range(1, 4):\n    print(i)```",
+        "```python\nfor i in range(1, 3):\n    print(i)```",
+        "```python\ni = 1\nwhile i < 3:\n    print(i)\n    i += 1```"
+      ],
+      "answer": "b",
+      "explanation": "`range(1, 4)` starts at 1 and stops before 4, giving 1, 2, 3. `range(3)` gives 0, 1, 2; `range(1, 3)` and the `while i < 3` loop both stop after 2."
+    },
+    {
+      "id": "demo-3",
+      "type": "single",
+      "domain": "dax",
+      "text": "Which DAX measure returns year-to-date sales?",
+      "options": [
+        "`Sales YTD = SUM(Sales[Amount])`",
+        "`Sales YTD = TOTALYTD(SUM(Sales[Amount]), 'Date'[Date])`",
+        "`Sales YTD = CALCULATE(SUM(Sales[Amount]), ALL('Date'))`",
+        "`Sales YTD = DATEADD(SUM(Sales[Amount]), -1, YEAR)`"
+      ],
+      "answer": "b",
+      "explanation": "`TOTALYTD` evaluates the expression from the start of the year up to the last date in the current filter context. `ALL('Date')` removes all date filters (all-time total), and `DATEADD` shifts a column of dates, not a sum."
+    },
+    {
+      "id": "demo-4",
+      "type": "single",
+      "domain": "powerbi",
+      "text": "Which Power BI visual is shown in the image?",
+      "image": "images/demo/column-chart.png",
+      "imageAlt": "Sales by region for 2025 and 2026",
+      "options": [
+        "Clustered column chart",
+        "Stacked bar chart",
+        "Line and clustered column chart",
+        "Ribbon chart"
+      ],
+      "answer": "a",
+      "explanation": "The bars are vertical (columns), and the two years sit side by side for each region (clustered), not stacked on top of each other. There is no line and no ribbon between the columns."
+    },
+    {
+      "id": "demo-5",
+      "type": "single",
+      "domain": "powerbi",
+      "text": "A manager wants to see how revenue changes month by month over the year. Which visual fits best?",
+      "options": [
+        {
+          "text": "Pie chart",
+          "image": "images/demo/pie-chart.png"
+        },
+        {
+          "text": "Line chart",
+          "image": "images/demo/line-chart.png"
+        },
+        {
+          "text": "Scatter chart",
+          "image": "images/demo/scatter-chart.png"
+        },
+        {
+          "text": "Clustered column chart",
+          "image": "images/demo/column-chart.png"
+        }
+      ],
+      "answer": "b",
+      "explanation": "A line chart is the standard choice for a trend over time: the months run along the axis and the line shows the direction of change. A pie chart shows parts of a whole, and a scatter chart compares two numeric values.",
+      "explanationImage": "images/demo/line-chart.png",
+      "explanationImageAlt": "Revenue by month as a line chart"
+    },
+    {
+      "id": "demo-6",
+      "type": "multiple",
+      "domain": "sql",
+      "text": "Look at this query.\n\n```sql\nSELECT region, SUM(amount) AS total\nFROM sales\nGROUP BY region\nHAVING SUM(amount) > 1000;```\n\nWhich two statements are true? (Select two.)",
+      "options": [
+        "It returns at most one row per region.",
+        "`HAVING` filters the groups after the totals are calculated.",
+        "`HAVING` could be replaced by `WHERE` here without changing the result.",
+        "It returns regions whose single largest sale is over 1000."
+      ],
+      "answer": [
+        "a",
+        "b"
+      ],
+      "explanation": "`GROUP BY region` makes one row per region, and `HAVING` keeps only groups whose total is over 1000. `WHERE` filters individual rows before grouping and cannot use `SUM()`."
+    },
+    {
+      "id": "demo-7",
+      "type": "order",
+      "domain": "python",
+      "text": "Put these steps in order to load a CSV file with pandas and show the first rows.",
+      "steps": [
+        "`import pandas as pd`",
+        "`df = pd.read_csv(\"sales.csv\")`",
+        "`print(df.head())`"
+      ],
+      "explanation": "Import the library first, then read the file into a DataFrame, then display it."
+    },
+    {
+      "id": "demo-8",
+      "type": "match",
+      "domain": "python",
+      "text": "Match each Python value to its type.",
+      "pairs": [
+        [
+          "`[1, 2, 3]`",
+          "list"
+        ],
+        [
+          "`(1, 2, 3)`",
+          "tuple"
+        ],
+        [
+          "`{\"a\": 1}`",
+          "dict"
+        ]
+      ],
+      "distractors": [
+        "set"
+      ],
+      "explanation": "Square brackets make a list, round brackets a tuple, and curly brackets with `key: value` pairs a dictionary. A set uses curly brackets without keys, e.g. `{1, 2}`."
+    }
+  ]
+}

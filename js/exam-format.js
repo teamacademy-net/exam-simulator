@@ -8,7 +8,16 @@
      truefalse  – True / False                         (answer: true)
      match      – match each item to an answer         (pairs: [["item", "answer"], ...])
                   also used for Yes/No statements       (pairs: [["statement", "Yes"], ...])
-     order      – put steps in the right sequence       (steps: ["first", "second", ...])  */
+     order      – put steps in the right sequence       (steps: ["first", "second", ...])
+
+   Code and images (any text: question, options, justification, match pairs, order steps):
+     ```python            a code block (any language name, or none); spacing is kept exactly
+     print("hi")
+     ```
+     `x = 1`              inline code
+     ![alt text](images/powerbi/q1.png)   an image (a file in the site, or a web address starting https://)
+   Shortcuts: "image" / "imageAlt" on a question, { "text": "...", "image": "..." } as an option,
+   "explanationImage" / "explanationImageAlt" for the justification.  */
 (function () {
   'use strict';
 
@@ -23,6 +32,41 @@
 
   const str = (v) => (v == null ? '' : String(v)).trim();
 
+  // ---- CODE AND IMAGES ---------------------------------------------------------------
+  const FENCE = /```[A-Za-z0-9_+#.-]*[ \t]*\n?([\s\S]*?)\n?```/g;
+  const IMG_MD = /!\[([^\]\n]*)\]\(([^)\s]*)\)/g;
+  const BAD_IMG = 'must be a file in the site such as images/powerbi/q1.png, or a web address starting with https:// (no spaces)';
+  // Image addresses allowed: https:// web addresses, or a file path inside the site (png, jpg, gif, webp, svg).
+  function safeImageSrc(src) {
+    src = str(src);
+    if (/^https:\/\/[^\s"'<>`\\]+$/i.test(src)) return src;
+    if (/^(\.\/)?[A-Za-z0-9_-][A-Za-z0-9_\-./]*\.(png|jpe?g|gif|webp|svg)$/i.test(src) && !src.includes('..') && !src.includes('//')) return src;
+    return '';
+  }
+  // Text without formatting marks, for drop-down lists and screen readers.
+  function plainText(v) {
+    return String(v == null ? '' : v)
+      .replace(FENCE, '$1')
+      .replace(IMG_MD, (m, alt) => (str(alt) ? `[image: ${str(alt)}]` : '[image]'))
+      .replace(/`([^`\n]+)`/g, '$1');
+  }
+  // Turns an "image" field into the ![alt](path) form used inside text.
+  function imageMd(src, alt, where, field) {
+    const ok = safeImageSrc(src);
+    if (!ok) throw new Error(`${where}: "${field}" ${BAD_IMG}. Found: "${src}".`);
+    return `![${String(alt == null ? '' : alt).replace(/[[\]\n]/g, ' ').trim()}](${ok})`;
+  }
+  // Checks code blocks are closed and every image address is allowed.
+  function checkRich(value, where, part) {
+    const s = String(value == null ? '' : value);
+    if ((s.match(/```/g) || []).length % 2) throw new Error(`${where}: a code block in the ${part} is not closed. Add a line with \`\`\` after the code.`);
+    const outsideCode = s.replace(FENCE, '');
+    let m; IMG_MD.lastIndex = 0;
+    while ((m = IMG_MD.exec(outsideCode))) {
+      if (!safeImageSrc(m[2])) throw new Error(`${where}: the image "${m[2]}" in the ${part} ${BAD_IMG}.`);
+    }
+  }
+
   function normalizeQuestion(q, n) {
     const where = `Question ${n}${q && q.id != null ? ` (id "${q.id}")` : ''}`;
     if (!q || typeof q !== 'object') throw new Error(`${where}: is not an object.`);
@@ -30,7 +74,13 @@
     const rawType = str(q.type).toLowerCase();
     let type = rawType ? TYPE_ALIASES[rawType] : (q.pairs ? 'match' : q.steps ? 'order' : null);
     if (rawType && !type) throw new Error(`${where}: unknown "type" "${q.type}". Use single, multiple, truefalse, match or order.`);
-    const base = { domain: str(q.domain) || 'general', text: String(q.text), explanation: q.explanation ? String(q.explanation) : '', fixedOrder: !!q.fixedOrder };
+    let text = String(q.text);
+    if (str(q.image)) text += '\n\n' + imageMd(q.image, q.imageAlt, where, 'image');
+    let explanation = q.explanation ? String(q.explanation) : '';
+    if (str(q.explanationImage)) explanation += (explanation ? '\n\n' : '') + imageMd(q.explanationImage, q.explanationImageAlt, where, 'explanationImage');
+    checkRich(text, where, 'question text');
+    checkRich(explanation, where, 'justification');
+    const base = { domain: str(q.domain) || 'general', text, explanation, fixedOrder: !!q.fixedOrder };
 
     if (type === 'truefalse') {
       let a = q.answer;
@@ -54,6 +104,7 @@
         const left = Array.isArray(p) ? str(p[0]) : p && str(p.item != null ? p.item : p.left);
         const right = Array.isArray(p) ? str(p[1]) : p && str(p.match != null ? p.match : p.right);
         if (!left || !right) throw new Error(`${where}: pair ${k + 1} needs two texts, like ["item", "answer"].`);
+        checkRich(left, where, `pair ${k + 1}`); checkRich(right, where, `pair ${k + 1}`);
         if (items.some((x) => x.text === left)) throw new Error(`${where}: the item "${left}" appears twice.`);
         items.push({ id: 'i' + (k + 1), text: left });
         answer.push(targetId(right));
@@ -67,6 +118,7 @@
       if (!Array.isArray(q.steps) || q.steps.length < 2) throw new Error(`${where}: an order question needs at least 2 "steps", listed in the correct order.`);
       const items = q.steps.map((s, k) => {
         if (!str(s)) throw new Error(`${where}: step ${k + 1} is empty.`);
+        checkRich(s, where, `step ${k + 1}`);
         return { id: 's' + (k + 1), text: str(s) };
       });
       if (new Set(items.map((x) => x.text)).size !== items.length) throw new Error(`${where}: two steps have the same text.`);
@@ -75,10 +127,15 @@
 
     // single / multiple choice
     if (!Array.isArray(q.options) || q.options.length < 2) throw new Error(`${where}: needs at least 2 "options".`);
-    const options = q.options.map((o, j) => (typeof o === 'string'
-      ? { id: String.fromCharCode(97 + j), text: o }
-      : { id: String(o && o.id != null ? o.id : String.fromCharCode(97 + j)), text: String(o && o.text != null ? o.text : '') }));
+    const options = q.options.map((o, j) => {
+      const L = String.fromCharCode(65 + j);
+      if (typeof o === 'string') return { id: String.fromCharCode(97 + j), text: o };
+      let t = String(o && o.text != null ? o.text : '');
+      if (o && str(o.image)) t += (str(t) ? '\n' : '') + imageMd(o.image, o.imageAlt != null ? o.imageAlt : str(t) || `Option ${L}`, where, `image of option ${L}`);
+      return { id: String(o && o.id != null ? o.id : String.fromCharCode(97 + j)), text: t };
+    });
     if (options.some((o) => !str(o.text))) throw new Error(`${where}: one of the "options" is empty.`);
+    options.forEach((o, j) => checkRich(o.text, where, `option ${String.fromCharCode(65 + j)}`));
     const ids = options.map((o) => o.id);
     const answer = (Array.isArray(q.answer) ? q.answer : [q.answer]).filter((a) => a != null && a !== '').map((a) => String(a).trim());
     if (!answer.length || answer.some((a) => !ids.includes(a))) {
@@ -171,5 +228,5 @@
     };
   }
 
-  window.ExamFormat = { normalize, typeSummary, template, TYPE_LABELS };
+  window.ExamFormat = { normalize, typeSummary, template, TYPE_LABELS, safeImageSrc, plainText };
 })();

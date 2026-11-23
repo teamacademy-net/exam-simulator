@@ -21,7 +21,37 @@
   // ---------------------------------------------------------------- utils
   const $app = document.getElementById('app');
   const h = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const rich = (s) => h(s).replace(/\n/g, '<br>');
+  // ---- RICH TEXT: line breaks, `inline code`, ```code blocks``` and ![alt](image) ------
+  // Every piece is escaped, so question text can never inject HTML.
+  const plain = (s) => window.ExamFormat.plainText(s);
+  function imgHtml(src, alt) {
+    const ok = window.ExamFormat.safeImageSrc(src);
+    if (!ok) return h(`![${alt}](${src})`);
+    return `<span class="qimg"><img src="${h(ok)}" alt="${h(alt || 'Image')}" loading="lazy">` +
+      `<button type="button" class="qimg__zoom" data-action="zoom-img" data-src="${h(ok)}" data-alt="${h(alt)}">⤢ Enlarge image</button></span>`;
+  }
+  function richInline(s) {
+    const re = /!\[([^\]\n]*)\]\(([^)\s]*)\)|`([^`\n]+)`/g;
+    let out = '', last = 0, m;
+    while ((m = re.exec(s))) {
+      out += h(s.slice(last, m.index)).replace(/\n/g, '<br>');
+      out += m[3] !== undefined ? `<code class="icode">${h(m[3])}</code>` : imgHtml(m[2], m[1]);
+      last = re.lastIndex;
+    }
+    return out + h(s.slice(last)).replace(/\n/g, '<br>');
+  }
+  function rich(v) {
+    const s = String(v == null ? '' : v);
+    const fence = /```([A-Za-z0-9_+#.-]*)[ \t]*\n?([\s\S]*?)\n?```/g;
+    let out = '', last = 0, m;
+    while ((m = fence.exec(s))) {
+      out += richInline(s.slice(last, m.index).replace(/\n+$/, ''));
+      out += `<span class="codeblock">${m[1] ? `<span class="codeblock__lang">${h(m[1])}</span>` : ''}<code>${h(m[2])}</code></span>`;
+      last = fence.lastIndex;
+      while (s[last] === '\n') last++;
+    }
+    return out + richInline(s.slice(last));
+  }
   const pad = (n) => String(n).padStart(2, '0');
   const letter = (k) => String.fromCharCode(65 + k);
   function fmtTime(sec) {
@@ -521,11 +551,11 @@
       return `<div class="match-row ${checked ? (ok ? 'is-correct' : 'is-wrong') : ''}">
         <div class="match-row__item">${rich(it.text)}</div>
         <div class="match-row__pick">
-          <select data-match-row="${k}" aria-label="Answer for: ${h(it.text)}" ${checked ? 'disabled' : ''}>
+          <select data-match-row="${k}" aria-label="Answer for: ${h(plain(it.text))}" ${checked ? 'disabled' : ''}>
             <option value="">Select…</option>
-            ${q.targets.map((t) => `<option value="${h(t.id)}" ${t.id === val ? 'selected' : ''}>${h(t.text)}</option>`).join('')}
+            ${q.targets.map((t) => `<option value="${h(t.id)}" ${t.id === val ? 'selected' : ''}>${h(plain(t.text))}</option>`).join('')}
           </select>${mark}
-          ${checked && !ok ? `<div class="match-row__right">Correct: ${h(tText(q.answer[k]))}</div>` : ''}
+          ${checked && !ok ? `<div class="match-row__right">Correct: ${rich(tText(q.answer[k]))}</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -543,8 +573,8 @@
         <span class="order-row__num">${k + 1}</span>
         <span class="order-row__text">${rich(text(id))}</span>
         ${checked ? `<span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span>` : `<span class="order-row__btns">
-          <button type="button" class="order-btn" data-action="order-up" data-step="${h(id)}" ${k === 0 ? 'disabled' : ''} aria-label="Move up: ${h(text(id))}">▲</button>
-          <button type="button" class="order-btn" data-action="order-down" data-step="${h(id)}" ${k === order.length - 1 ? 'disabled' : ''} aria-label="Move down: ${h(text(id))}">▼</button></span>`}
+          <button type="button" class="order-btn" data-action="order-up" data-step="${h(id)}" ${k === 0 ? 'disabled' : ''} aria-label="Move up: ${h(plain(text(id)))}">▲</button>
+          <button type="button" class="order-btn" data-action="order-down" data-step="${h(id)}" ${k === order.length - 1 ? 'disabled' : ''} aria-label="Move down: ${h(plain(text(id)))}">▼</button></span>`}
       </li>`;
     }).join('');
     const confirm = !checked && !resp.length
@@ -948,18 +978,18 @@
         <tbody>${x.items.map((it, k) => {
           const ok = x.response[k] === x.answer[k];
           return `<tr class="${ok ? 'is-correct' : 'is-wrong'}"><td>${rich(it.text)}</td>
-            <td>${x.response[k] ? h(t(x.response[k])) : '<span class="muted">No answer</span>'} <span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span></td>
-            <td>${h(t(x.answer[k]))}</td></tr>`;
+            <td>${x.response[k] ? rich(t(x.response[k])) : '<span class="muted">No answer</span>'} <span class="mark ${ok ? 'mark--ok' : 'mark--bad'}">${ok ? '✓' : '✗'}</span></td>
+            <td>${rich(t(x.answer[k]))}</td></tr>`;
         }).join('')}</tbody></table></div>`;
     }
     if (x.type === 'order') {
       const t = (id) => ((x.items || []).find((y) => y.id === id) || {}).text || '';
       const yours = hasResponse(x.response)
-        ? `<ol>${x.response.map((id, k) => `<li class="${id === x.answer[k] ? 'is-correct' : 'is-wrong'}">${h(t(id))}</li>`).join('')}</ol>`
+        ? `<ol>${x.response.map((id, k) => `<li class="${id === x.answer[k] ? 'is-correct' : 'is-wrong'}">${rich(t(id))}</li>`).join('')}</ol>`
         : '<p class="muted">No answer</p>';
       return `<div class="order-compare">
         <div><h4>Your order</h4>${yours}</div>
-        <div><h4>Correct order</h4><ol>${x.answer.map((id) => `<li>${h(t(id))}</li>`).join('')}</ol></div></div>`;
+        <div><h4>Correct order</h4><ol>${x.answer.map((id) => `<li>${rich(t(id))}</li>`).join('')}</ol></div></div>`;
     }
     return `<ul class="answer__opts">${x.options.map((o, k) => {
       const isAns = x.answer.includes(o.id), picked = x.response.includes(o.id);
@@ -1126,6 +1156,14 @@
     }
   };
 
+  // Enlarge a question image in a pop-up (the button sits inside options too, without selecting them)
+  actions['zoom-img'] = (el) => {
+    const src = window.ExamFormat.safeImageSrc(el.dataset.src);
+    if (!src) return;
+    showModal({ title: el.dataset.alt || 'Image', body: `<img class="zoom-img" src="${h(src)}" alt="${h(el.dataset.alt || '')}">`,
+      actions: [{ label: 'Close', primary: true }] });
+  };
+
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-action]');
     if (!el || el.disabled) return;
@@ -1148,6 +1186,7 @@
     if (document.querySelector('.modal-backdrop')) return;
     if (e.target.closest && e.target.closest('#calc')) return;
     const opt = e.target.closest && e.target.closest('.option[data-opt]');
+    if (opt && e.target.closest('button') && (e.key === 'Enter' || e.key === ' ')) return;
     if (opt && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); return selectOption(opt.dataset.opt); }
     if (!state || state.view === 'break' || !e.altKey) return;
     const k = e.key.toLowerCase();
