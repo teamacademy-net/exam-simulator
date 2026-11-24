@@ -187,3 +187,11 @@ Rules: a student sees an exam only if it is published and either in **no course*
 their **active** courses. Trainers and admins see every exam. Removing or ending access never deletes results.
 Built-in sample exams can be put in a course too (they are hidden from students who are not enrolled, but their
 files are public on GitHub, so use uploaded exams for real question banks).
+
+## Resume on another device or browser
+
+Run `supabase/setup-sessions.sql` once in the Supabase SQL Editor. After that, an unfinished exam is saved in
+Supabase as well as in the browser (about 2 seconds after each answer, and the clock once a minute). A student can sign in
+on a phone, another computer or another browser and click **Resume** to continue where they stopped.
+Only one browser works on an exam at a time: if the first one is still open, it stops and says the exam continues elsewhere.
+The saved copy is removed when the exam is finished or discarded. Until the script is run, progress is kept in the browser only, as before.

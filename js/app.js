@@ -156,7 +156,92 @@
   let viewing = null;      // { result, filter } when showing a score report
 
   const prefs = Object.assign({ font: 1 }, store.get(KEYS.prefs, {}));
-  const save = () => { if (state) store.set(KEYS.session, state); };
+  // fromTick = the once-a-second clock save (sent to Supabase at most once a minute)
+  const save = (fromTick) => { if (state) { state.savedAt = Date.now(); store.set(KEYS.session, state); cloud.schedule(!!fromTick); } };
+
+  // ---------------------------------------------------------------- CLOUD RESUME
+  // An unfinished exam is also kept in Supabase (table exam_sessions, setup-sessions.sql),
+  // so the student can sign in on another device or browser and continue.
+  // Only one browser at a time works on it: the one that last pressed Start or Resume.
+  const DEVICE = (() => {
+    let d = store.get('examsim.device', null);
+    if (!d) { d = 'd' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); store.set('examsim.device', d); }
+    return d;
+  })();
+  const cloud = {
+    on: false, timer: null, lastPush: 0, busy: false, again: false,
+    snap: null,   // the latest unfinished exam waiting to be sent (kept even after leaving the exam screen)
+    db() { return AUTH && AUTH.client && AUTH.user ? AUTH.client.from('exam_sessions') : null; },
+    // Read this student's unfinished exam from Supabase (null if none). Turns the feature off if the table is missing.
+    async fetch() {
+      const t = this.db(); if (!t) return null;
+      const { data, error } = await t.select('device_id, state, updated_at').eq('user_id', AUTH.user.id).maybeSingle();
+      if (error) { this.on = false; console.warn('Resume on other devices is off:', error.message || error); return null; }
+      this.on = true;
+      return data || null;
+    },
+    schedule(fromTick) {
+      if (!this.on || !state) return;
+      this.snap = state;
+      if (fromTick && Date.now() - this.lastPush < 60000) return;
+      clearTimeout(this.timer);
+      this.timer = setTimeout(() => this.push(), fromTick ? 0 : 2000);
+    },
+    // Send the latest progress. If another browser has taken the exam over, stop here.
+    async push() {
+      const snap = this.snap;
+      if (!this.on || !snap || !this.db()) return;
+      if (this.busy) { this.again = true; return; }
+      this.busy = true; this.lastPush = Date.now();
+      try {
+        const { data, error } = await this.db().update({ exam_id: snap.examId, state: snap, updated_at: new Date().toISOString() })
+          .eq('user_id', AUTH.user.id).eq('device_id', DEVICE).select('user_id');
+        if (error) throw error;
+        if ((!data || !data.length) && this.snap === snap) {
+          const row = await this.fetch();
+          if (!this.on || this.snap !== snap) return;
+          if (row && row.device_id !== DEVICE) this.takenOver('moved');            // resumed in another browser
+          else if (!row && snap.synced) this.takenOver('ended');                   // finished or discarded elsewhere
+          else if (!row) await this.claim(snap);                                   // kept only in this browser so far
+        }
+      } catch (err) {
+        console.warn('Could not save progress online (kept in this browser):', (err && err.message) || err);
+      } finally {
+        this.busy = false;
+        if (this.again) { this.again = false; if (this.snap) this.push(); }
+      }
+    },
+    // This browser starts or resumes the exam: store it and mark this browser as the one in use.
+    async claim(snap) {
+      snap = snap || state;
+      if (!this.on || !snap || !this.db()) return;
+      this.snap = snap;
+      snap.synced = true;   // from now on this exam has an online copy
+      const { error } = await this.db().upsert({ user_id: AUTH.user.id, exam_id: snap.examId, device_id: DEVICE, state: snap, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (error) { snap.synced = false; console.warn('Could not save progress online (kept in this browser):', error.message || error); }
+      if (state === snap) store.set(KEYS.session, snap);
+      this.lastPush = Date.now();
+    },
+    // Finished or discarded: nothing left to resume anywhere.
+    async clear() {
+      clearTimeout(this.timer); this.snap = null;
+      if (!this.on || !this.db()) return;
+      const { error } = await this.db().delete().eq('user_id', AUTH.user.id);
+      if (error) console.warn('Could not remove the unfinished exam online:', error.message || error);
+    },
+    // Another browser resumed (or finished) this exam: this one stops, so the two never overwrite each other.
+    takenOver(reason) {
+      clearTimeout(this.timer); this.snap = null;
+      store.del(KEYS.session);
+      const ended = reason === 'ended';
+      if (!state) { toast(ended ? 'Your unfinished exam was finished or discarded on another device.' : 'Your unfinished exam is now continuing on another device.'); if (!intro && !viewing) renderHome(); return; }
+      stopTimer(); state = null;
+      showModal({ title: ended ? 'Exam finished on another device' : 'Exam continued on another device',
+        body: ended ? '<p>This exam was finished or discarded in another browser or on another device.</p>'
+          : '<p>You resumed this exam in another browser or on another device, so it continues there. Your answers so far are saved.</p>',
+        actions: [{ label: 'OK', primary: true, onClick: () => renderHome() }] });
+    }
+  };
   const stopTimer = () => { if (timerId) { clearInterval(timerId); timerId = null; } };
   const startTimer = () => { stopTimer(); timerId = setInterval(tick, 1000); };
 
@@ -355,7 +440,7 @@
       return showModal({
         title: 'Replace exam in progress?',
         body: '<p>You have an unfinished exam. Starting a new one will discard it.</p>',
-        actions: [{ label: 'Cancel' }, { label: 'Discard and continue', danger: true, onClick: () => { store.del(KEYS.session); openExam(id); } }]
+        actions: [{ label: 'Cancel' }, { label: 'Discard and continue', danger: true, onClick: () => { store.del(KEYS.session); cloud.clear(); openExam(id); } }]
       });
     }
     const signedInName = AUTH && AUTH.user ? AUTH.displayName() : '';  // SUPABASE
@@ -499,12 +584,21 @@
     const p = store.get(KEYS.prefs, {}); p.candidate = intro.candidate; store.set(KEYS.prefs, Object.assign(prefs, p));
     state = buildSession(ex);
     intro = null;
-    save(); startTimer(); renderSession();
+    save(); cloud.claim(); startTimer(); renderSession();
   }
 
-  function resumeSession() {
-    state = store.get(KEYS.session, null);
+  async function resumeSession() {
+    let local = store.get(KEYS.session, null);
+    if (cloud.on) {
+      const row = await cloud.fetch();
+      if (cloud.on && !row && local && local.synced) {
+        store.del(KEYS.session); toast('This exam was finished or discarded on another device.'); return renderHome();
+      }
+      if (row && row.state && (!local || (row.state.savedAt || 0) > (local.savedAt || 0))) { local = row.state; store.set(KEYS.session, local); }
+    }
+    state = local;
     if (!state) return renderHome();
+    await cloud.claim();
     startTimer(); renderSession();
   }
 
@@ -865,7 +959,7 @@
       const el = document.getElementById('timer');
       if (el) { el.innerHTML = timerText(); el.classList.toggle('is-low', !!isLow()); }
     }
-    save();
+    save(true);
   }
 
   // ---------------------------------------------------------------- scoring
@@ -901,6 +995,7 @@
     store.set(KEYS.history, hist.slice(0, CFG.historyLimit || 25));
     store.del(KEYS.session);
     state = null;
+    cloud.clear();
     viewing = { result, filter: null };
     renderResults();
     // SUPABASE: also save the score to the signed-in user's account.
@@ -1113,7 +1208,7 @@
     resume: resumeSession,
     discard: () => showModal({
       title: 'Discard exam in progress?', body: '<p>Your answers for this attempt will be lost.</p>',
-      actions: [{ label: 'Cancel' }, { label: 'Discard', danger: true, onClick: () => { store.del(KEYS.session); renderHome(); } }]
+      actions: [{ label: 'Cancel' }, { label: 'Discard', danger: true, onClick: () => { store.del(KEYS.session); cloud.clear(); renderHome(); } }]
     }),
     'open-exam': (el) => openExam(el.dataset.id),
     cat: (el) => { prefs.cat = el.dataset.cat; store.set(KEYS.prefs, prefs); renderHome(); },
@@ -1166,10 +1261,14 @@
     retake: (el) => openExam(el.dataset.id),
     print: () => { if (!viewing.filter) renderAnswers('all'); window.print(); },
     'sign-out': () => {
-      const out = () => { if (state) { save(); stopTimer(); } AUTH.signOut(); };
+      const out = async () => {
+        if (state) { save(); stopTimer(); }
+        if (cloud.snap) { clearTimeout(cloud.timer); await Promise.race([cloud.push(), new Promise((r) => setTimeout(r, 2500))]); }
+        AUTH.signOut();
+      };
       if (state) {
         return showModal({
-          title: 'Sign out during an exam?', body: '<p>Your progress is kept in this browser, and you can resume after signing back in.</p>',
+          title: 'Sign out during an exam?', body: '<p>Your progress is saved, and you can resume after signing back in, on this or another device.</p>',
           actions: [{ label: 'Cancel' }, { label: 'Sign out', danger: true, onClick: out }]
         });
       }
@@ -1256,8 +1355,19 @@
         }
       }
     }
+    // CLOUD RESUME: an unfinished exam saved from another device or browser
+    if (AUTH && AUTH.client && AUTH.user) {
+      try {
+        const row = await cloud.fetch();
+        const local = store.get(KEYS.session, null);
+        if (row && row.state && row.state.questions && (!local || (row.state.savedAt || 0) > (local.savedAt || 0))) store.set(KEYS.session, row.state);
+        else if (cloud.on && !row && local && local.synced) store.del(KEYS.session);   // finished or discarded on another device
+      } catch (err) { console.warn('Resume on other devices is off:', (err && err.message) || err); }
+    }
     loadExams();
     renderHome();
   }
   if (AUTH) AUTH.onSignedIn(boot); else boot();
+  // Leaving the page or switching apps (e.g. on a phone): send the latest progress.
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && cloud.snap) { clearTimeout(cloud.timer); cloud.push(); } });
 })();
